@@ -1,4 +1,4 @@
-const API_URL = "https://barber-legend.onrender.com";
+const API_URL = "https://barber-legend-1.onrender.com";
 
 const tg = window.Telegram?.WebApp;
 
