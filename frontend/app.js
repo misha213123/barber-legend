@@ -377,13 +377,26 @@ async function admin() {
 }
 
 async function setStatus(id, status) {
-  await fetch(`${API_URL}/admin/bookings/${id}/status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status })
-  });
+  haptic();
 
-  admin();
+  try {
+    const res = await fetch(`${API_URL}/admin/bookings/${id}/status`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ status: status })
+    });
+
+    if (!res.ok) {
+      throw new Error("Status update failed");
+    }
+
+    await admin();
+  } catch (error) {
+    alert("Не удалось изменить статус. Проверь backend.");
+    console.error(error);
+  }
 }
 
 home();
