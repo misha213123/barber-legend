@@ -419,3 +419,12 @@ body {
   color: #111;
   border: none;
 }
+
+.admin-tabs.four-tabs {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.small-btn.danger {
+  background: #3a1515;
+  color: #ffb3b3;
+}

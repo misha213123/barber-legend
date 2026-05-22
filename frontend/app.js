@@ -13,7 +13,7 @@ const user = tg?.initDataUnsafe?.user || {
   username: "demo_user"
 };
 
-let adminMode = "active";
+let adminMode = "new";
 
 const services = [
   { id: 1, name: "Стрижка", desc: "Классическая мужская стрижка с укладкой", duration: 45, price: 120, icon: "✂️", img: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=600&auto=format&fit=crop" },
@@ -386,18 +386,19 @@ async function admin() {
 
     const allBookings = await res.json();
 
-    const activeBookings = allBookings.filter(
-      b => b.status === "Новая" || b.status === "Подтверждена"
-    );
+    const newBookings = allBookings.filter(b => b.status === "Новая");
+    const confirmedBookings = allBookings.filter(b => b.status === "Подтверждена");
+    const doneBookings = allBookings.filter(b => b.status === "Выполнена");
+    const cancelledBookings = allBookings.filter(b => b.status === "Отменена");
 
-    const historyBookings = allBookings.filter(
-      b => b.status === "Выполнена" || b.status === "Отменена"
-    );
+    let bookings = newBookings;
 
-    const bookings = adminMode === "active" ? activeBookings : historyBookings;
+    if (adminMode === "confirmed") bookings = confirmedBookings;
+    if (adminMode === "done") bookings = doneBookings;
+    if (adminMode === "cancelled") bookings = cancelledBookings;
 
     const revenue = allBookings
-      .filter(b => b.status !== "Отменена")
+      .filter(b => b.status === "Выполнена" || b.status === "Подтверждена")
       .reduce((sum, b) => sum + Number(b.price || 0), 0);
 
     app.innerHTML = `
@@ -408,14 +409,16 @@ async function admin() {
         </div>
 
         <div class="admin-grid">
-          <div class="stat"><strong>${activeBookings.length}</strong><span>Активных</span></div>
-          <div class="stat"><strong>${historyBookings.length}</strong><span>История</span></div>
+          <div class="stat"><strong>${newBookings.length}</strong><span>Новые</span></div>
+          <div class="stat"><strong>${confirmedBookings.length}</strong><span>Подтв.</span></div>
           <div class="stat"><strong>${revenue} zł</strong><span>Сумма</span></div>
         </div>
 
-        <div class="admin-tabs">
-          <button class="${adminMode === "active" ? "tab active" : "tab"}" onclick="setAdminMode('active')">Активные</button>
-          <button class="${adminMode === "history" ? "tab active" : "tab"}" onclick="setAdminMode('history')">История</button>
+        <div class="admin-tabs four-tabs">
+          <button class="${adminMode === "new" ? "tab active" : "tab"}" onclick="setAdminMode('new')">Новые</button>
+          <button class="${adminMode === "confirmed" ? "tab active" : "tab"}" onclick="setAdminMode('confirmed')">Подтв.</button>
+          <button class="${adminMode === "done" ? "tab active" : "tab"}" onclick="setAdminMode('done')">Готово</button>
+          <button class="${adminMode === "cancelled" ? "tab active" : "tab"}" onclick="setAdminMode('cancelled')">Отмена</button>
         </div>
 
         ${bookings.length ? bookings.map(b => `
@@ -424,15 +427,28 @@ async function admin() {
             <div>
               <h3>${b.service}</h3>
               <p>Клиент: @${b.username || "без username"}</p>
+              <p>Имя: ${b.first_name || "не указано"}</p>
               <p>Мастер: ${b.master}</p>
               <p>${b.date} · ${b.time}</p>
               <p class="price">${b.price} zł · ${b.status}</p>
 
-              ${adminMode === "active" ? `
-                <button class="small-btn" onclick="setStatus(${b.id}, 'Подтверждена')">Подтвердить</button>
-                <button class="small-btn" onclick="setStatus(${b.id}, 'Выполнена')">Выполнена</button>
-                <button class="small-btn" onclick="setStatus(${b.id}, 'Отменена')">Отменить</button>
-              ` : ""}
+              ${
+                b.status === "Новая"
+                  ? `
+                    <button class="small-btn" onclick="setStatus(${b.id}, 'Подтверждена')">Подтвердить</button>
+                    <button class="small-btn danger" onclick="setStatus(${b.id}, 'Отменена')">Отменить</button>
+                  `
+                  : ""
+              }
+
+              ${
+                b.status === "Подтверждена"
+                  ? `
+                    <button class="small-btn" onclick="setStatus(${b.id}, 'Выполнена')">Выполнена</button>
+                    <button class="small-btn danger" onclick="setStatus(${b.id}, 'Отменена')">Отменить</button>
+                  `
+                  : ""
+              }
             </div>
           </div>
         `).join("") : `<p class="muted">Здесь пока пусто</p>`}
