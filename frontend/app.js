@@ -13,7 +13,7 @@ const user = tg?.initDataUnsafe?.user || {
   username: "demo_user"
 };
 
-const ADMIN_IDS = ["625010755"]; // сюда поставь свой Telegram ID
+const ADMIN_IDS = ["6863310038"]; // сюда поставь свой Telegram ID
 let adminMode = "active";
 
 const services = [
