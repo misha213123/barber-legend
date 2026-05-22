@@ -36,7 +36,7 @@ let selectedTime = "13:00";
 let busyTimes = [];
 
 const app = document.getElementById("app");
-const ADMIN_IDS = ["625010755"];
+const ADMIN_IDS = ["625010756"];
 let adminMode = "active";
 
 function haptic() {
