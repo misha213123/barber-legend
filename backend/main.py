@@ -1,0 +1,148 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import sqlite3
+from typing import Optional
+
+app = FastAPI(title="Legend Barbershop API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+conn = sqlite3.connect("bookings.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS bookings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id TEXT,
+    username TEXT,
+    first_name TEXT,
+    service TEXT,
+    master TEXT,
+    date TEXT,
+    time TEXT,
+    price INTEGER,
+    status TEXT DEFAULT 'Новая'
+)
+""")
+conn.commit()
+
+
+class BookingCreate(BaseModel):
+    telegram_id: str
+    username: Optional[str] = ""
+    first_name: Optional[str] = ""
+    service: str
+    master: str
+    date: str
+    time: str
+    price: int
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+def row_to_dict(row):
+    return {
+        "id": row[0],
+        "telegram_id": row[1],
+        "username": row[2],
+        "first_name": row[3],
+        "service": row[4],
+        "master": row[5],
+        "date": row[6],
+        "time": row[7],
+        "price": row[8],
+        "status": row[9],
+    }
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "app": "Legend Barbershop"}
+
+
+@app.post("/bookings")
+def create_booking(data: BookingCreate):
+    cursor.execute("""
+    SELECT id FROM bookings
+    WHERE master = ? AND date = ? AND time = ? AND status != 'Отменена'
+    """, (data.master, data.date, data.time))
+
+    exists = cursor.fetchone()
+
+    if exists:
+        raise HTTPException(status_code=409, detail="Это время уже занято")
+
+    cursor.execute("""
+    INSERT INTO bookings (
+        telegram_id, username, first_name, service,
+        master, date, time, price, status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        data.telegram_id,
+        data.username,
+        data.first_name,
+        data.service,
+        data.master,
+        data.date,
+        data.time,
+        data.price,
+        "Новая"
+    ))
+
+    conn.commit()
+
+    return {"success": True, "booking_id": cursor.lastrowid}
+
+
+@app.get("/bookings/{telegram_id}")
+def get_my_bookings(telegram_id: str):
+    cursor.execute("""
+    SELECT * FROM bookings
+    WHERE telegram_id = ?
+    ORDER BY id DESC
+    """, (telegram_id,))
+
+    return [row_to_dict(row) for row in cursor.fetchall()]
+
+
+@app.get("/admin/bookings")
+def get_all_bookings():
+    cursor.execute("""
+    SELECT * FROM bookings
+    ORDER BY id DESC
+    """)
+
+    return [row_to_dict(row) for row in cursor.fetchall()]
+
+
+@app.patch("/admin/bookings/{booking_id}/status")
+def update_booking_status(booking_id: int, data: StatusUpdate):
+    cursor.execute("""
+    UPDATE bookings
+    SET status = ?
+    WHERE id = ?
+    """, (data.status, booking_id))
+
+    conn.commit()
+
+    return {"success": True}
+
+
+@app.get("/slots/busy")
+def busy_slots(master: str, date: str):
+    cursor.execute("""
+    SELECT time FROM bookings
+    WHERE master = ? AND date = ? AND status != 'Отменена'
+    """, (master, date))
+
+    return [row[0] for row in cursor.fetchall()]
