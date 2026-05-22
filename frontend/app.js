@@ -76,7 +76,8 @@ function home() {
 
       <div class="hero-title">PREMIUM CUT.<br>REAL EXPERIENCE.</div>
       <p class="muted">Твой стиль. Наше ремесло.</p>
-
+<p class="muted">ID: ${user.id}</p>
+<p class="muted">Admin: ${isAdminUser() ? "YES" : "NO"}</p>
       <button class="gold-btn" onclick="servicesScreen()">▣ Записаться</button>
 
       <div class="row-title">
