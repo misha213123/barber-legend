@@ -13,7 +13,6 @@ const user = tg?.initDataUnsafe?.user || {
   username: "demo_user"
 };
 
-
 let adminMode = "active";
 
 const services = [
@@ -37,6 +36,7 @@ let selectedMaster = masters[0];
 let selectedDay = { label: "Ср", date: "22 мая, среда" };
 let selectedTime = "13:00";
 let busyTimes = [];
+let adminCache = null;
 
 const app = document.getElementById("app");
 
@@ -45,16 +45,16 @@ function haptic() {
 }
 
 async function isAdminUser() {
+  if (adminCache !== null) return adminCache;
+
   try {
-    const res = await fetch(
-      `${API_URL}/me/admin?telegram_id=${user.id}`
-    );
-
+    const res = await fetch(`${API_URL}/me/admin?telegram_id=${encodeURIComponent(user.id)}`);
     const data = await res.json();
-
-    return data.is_admin === true;
+    adminCache = data.is_admin === true;
+    return adminCache;
   } catch (e) {
-    console.error(e);
+    console.error("Admin check error:", e);
+    adminCache = false;
     return false;
   }
 }
@@ -67,12 +67,7 @@ async function nav(active = "home") {
       <div class="nav ${active === "home" ? "active" : ""}" onclick="home()"><b>⌂</b>Главная</div>
       <div class="nav ${active === "booking" ? "active" : ""}" onclick="servicesScreen()"><b>▣</b>Запись</div>
       <div class="nav ${active === "my" ? "active" : ""}" onclick="myBookings()"><b>▤</b>Мои записи</div>
-
-      ${admin ? `
-        <div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()">
-          <b>♙</b>Админ
-        </div>
-      ` : ""}
+      ${admin ? `<div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()"><b>♙</b>Админ</div>` : ""}
     </div>
   `;
 }
@@ -93,6 +88,7 @@ async function home() {
       <div class="hero-title">PREMIUM CUT.<br>REAL EXPERIENCE.</div>
       <p class="muted">Твой стиль. Наше ремесло.</p>
       <p class="muted">Твой ID: ${user.id}</p>
+
       <button class="gold-btn" onclick="servicesScreen()">▣ Записаться</button>
 
       <div class="row-title">
@@ -115,7 +111,7 @@ async function home() {
   `;
 }
 
-function servicesScreen() {
+async function servicesScreen() {
   haptic();
 
   app.innerHTML = `
@@ -148,7 +144,7 @@ function selectService(id) {
   servicesScreen();
 }
 
-function mastersScreen() {
+async function mastersScreen() {
   haptic();
 
   app.innerHTML = `
@@ -359,8 +355,10 @@ async function myBookings() {
 async function admin() {
   haptic();
 
-  if (!isAdminUser()) {
-    home();
+  const adminAccess = await isAdminUser();
+
+  if (!adminAccess) {
+    await home();
     return;
   }
 
@@ -380,9 +378,11 @@ async function admin() {
 
     if (res.status === 403) {
       alert("Нет доступа к админке.");
-      home();
+      await home();
       return;
     }
+
+    if (!res.ok) throw new Error();
 
     const allBookings = await res.json();
 
@@ -437,7 +437,7 @@ async function admin() {
           </div>
         `).join("") : `<p class="muted">Здесь пока пусто</p>`}
 
-        ${nav("admin")}
+        ${await nav("admin")}
       </div>
     `;
   } catch {
