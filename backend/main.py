@@ -17,29 +17,41 @@ app.add_middleware(
 )
 
 ADMIN_IDS = [
-    item.strip()
-    for item in os.getenv("ADMIN_IDS", "").split(",")
-    if item.strip()
+    x.strip()
+    for x in os.getenv("ADMIN_IDS", "").split(",")
+    if x.strip()
 ]
 
-conn = sqlite3.connect("bookings.db", check_same_thread=False)
-cursor = conn.cursor()
+DB_PATH = "bookings.db"
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS bookings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id TEXT,
-    username TEXT,
-    first_name TEXT,
-    service TEXT,
-    master TEXT,
-    date TEXT,
-    time TEXT,
-    price INTEGER,
-    status TEXT DEFAULT 'Новая'
-)
-""")
-conn.commit()
+
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_conn()
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS bookings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id TEXT,
+        username TEXT,
+        first_name TEXT,
+        service TEXT,
+        master TEXT,
+        date TEXT,
+        time TEXT,
+        price INTEGER,
+        status TEXT DEFAULT 'Новая'
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+
+init_db()
 
 
 class BookingCreate(BaseModel):
@@ -63,50 +75,57 @@ def is_admin(telegram_id: str) -> bool:
 
 def require_admin(telegram_id: str):
     if not is_admin(telegram_id):
-        raise HTTPException(status_code=403, detail="Нет доступа")
+        raise HTTPException(status_code=403, detail="Not admin")
 
 
 def row_to_dict(row):
     return {
-        "id": row[0],
-        "telegram_id": row[1],
-        "username": row[2],
-        "first_name": row[3],
-        "service": row[4],
-        "master": row[5],
-        "date": row[6],
-        "time": row[7],
-        "price": row[8],
-        "status": row[9],
+        "id": row["id"],
+        "telegram_id": row["telegram_id"],
+        "username": row["username"],
+        "first_name": row["first_name"],
+        "service": row["service"],
+        "master": row["master"],
+        "date": row["date"],
+        "time": row["time"],
+        "price": row["price"],
+        "status": row["status"],
     }
 
 
 @app.get("/")
 def root():
-    return {"status": "ok", "app": "Legend Barbershop"}
+    return {
+        "status": "ok",
+        "app": "Legend Barbershop",
+        "admins": len(ADMIN_IDS)
+    }
 
 
 @app.get("/me/admin")
 def check_admin(telegram_id: str):
-    return {"is_admin": is_admin(telegram_id)}
+    return {"is_admin": is_admin(telegram_id), "telegram_id": telegram_id}
 
 
 @app.post("/bookings")
 def create_booking(data: BookingCreate):
-    cursor.execute("""
-    SELECT id FROM bookings
-    WHERE master = ? AND date = ? AND time = ? AND status != 'Отменена'
-    """, (data.master, data.date, data.time))
+    conn = get_conn()
 
-    if cursor.fetchone():
+    exists = conn.execute("""
+        SELECT id FROM bookings
+        WHERE master = ? AND date = ? AND time = ? AND status != 'Отменена'
+    """, (data.master, data.date, data.time)).fetchone()
+
+    if exists:
+        conn.close()
         raise HTTPException(status_code=409, detail="Это время уже занято")
 
-    cursor.execute("""
-    INSERT INTO bookings (
-        telegram_id, username, first_name, service,
-        master, date, time, price, status
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    cur = conn.execute("""
+        INSERT INTO bookings (
+            telegram_id, username, first_name, service,
+            master, date, time, price, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.telegram_id,
         data.username,
@@ -120,51 +139,38 @@ def create_booking(data: BookingCreate):
     ))
 
     conn.commit()
-    return {"success": True, "booking_id": cursor.lastrowid}
+    booking_id = cur.lastrowid
+    conn.close()
+
+    return {"success": True, "booking_id": booking_id}
 
 
 @app.get("/bookings/{telegram_id}")
 def get_my_bookings(telegram_id: str):
-    cursor.execute("""
-    SELECT * FROM bookings
-    WHERE telegram_id = ?
-    ORDER BY id DESC
-    """, (telegram_id,))
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT * FROM bookings
+        WHERE telegram_id = ?
+        ORDER BY id DESC
+    """, (telegram_id,)).fetchall()
+    conn.close()
 
-    return [row_to_dict(row) for row in cursor.fetchall()]
+    return [row_to_dict(row) for row in rows]
 
 
 @app.get("/admin/bookings")
-def admin_bookings(telegram_id: int):
-    if str(telegram_id) not in ADMIN_IDS:
-        raise HTTPException(status_code=403, detail="Not admin")
+def admin_bookings(telegram_id: str = Query(...)):
+    require_admin(telegram_id)
 
-    conn = sqlite3.connect("bookings.db")
-    conn.row_factory = sqlite3.Row
-
+    conn = get_conn()
     rows = conn.execute("""
-        SELECT *
-        FROM bookings
+        SELECT * FROM bookings
         ORDER BY id DESC
     """).fetchall()
-
     conn.close()
 
-    result = []
+    return [row_to_dict(row) for row in rows]
 
-    for row in rows:
-        result.append({
-            "id": row["id"],
-            "client_name": row["client_name"],
-            "service": row["service"],
-            "master": row["master"],
-            "date": row["date"],
-            "time": row["time"],
-            "price": row["price"],
-            "status": row["status"]
-        })
-
-    return result
 
 @app.patch("/admin/bookings/{booking_id}/status")
 def update_booking_status(
@@ -174,21 +180,25 @@ def update_booking_status(
 ):
     require_admin(telegram_id)
 
-    cursor.execute("""
-    UPDATE bookings
-    SET status = ?
-    WHERE id = ?
+    conn = get_conn()
+    conn.execute("""
+        UPDATE bookings
+        SET status = ?
+        WHERE id = ?
     """, (data.status, booking_id))
-
     conn.commit()
+    conn.close()
+
     return {"success": True}
 
 
 @app.get("/slots/busy")
 def busy_slots(master: str, date: str):
-    cursor.execute("""
-    SELECT time FROM bookings
-    WHERE master = ? AND date = ? AND status != 'Отменена'
-    """, (master, date))
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT time FROM bookings
+        WHERE master = ? AND date = ? AND status != 'Отменена'
+    """, (master, date)).fetchall()
+    conn.close()
 
-    return [row[0] for row in cursor.fetchall()]
+    return [row["time"] for row in rows]
