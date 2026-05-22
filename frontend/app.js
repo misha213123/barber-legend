@@ -36,18 +36,26 @@ let selectedTime = "13:00";
 let busyTimes = [];
 
 const app = document.getElementById("app");
+const ADMIN_IDS = ["625010755"];
+let adminMode = "active";
 
 function haptic() {
   tg?.HapticFeedback?.impactOccurred("light");
 }
 
 function nav(active = "home") {
+  const isAdmin = ADMIN_IDS.includes(String(user.id));
+
   return `
     <div class="bottom">
       <div class="nav ${active === "home" ? "active" : ""}" onclick="home()"><b>⌂</b>Главная</div>
       <div class="nav ${active === "booking" ? "active" : ""}" onclick="servicesScreen()"><b>▣</b>Запись</div>
       <div class="nav ${active === "my" ? "active" : ""}" onclick="myBookings()"><b>▤</b>Мои записи</div>
-      <div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()"><b>♙</b>Админ</div>
+      ${
+        isAdmin
+          ? `<div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()"><b>♙</b>Админ</div>`
+          : `<div class="nav"><b>★</b>Legend</div>`
+      }
     </div>
   `;
 }
@@ -323,6 +331,22 @@ async function myBookings() {
 async function admin() {
   haptic();
 
+  const isAdmin = ADMIN_IDS.includes(String(user.id));
+
+  if (!isAdmin) {
+    app.innerHTML = `
+      <div class="screen">
+        <div class="header">
+          <div class="back" onclick="home()">←</div>
+          <h2>Нет доступа</h2>
+        </div>
+        <p class="muted">Админ-панель доступна только владельцу барбершопа.</p>
+        ${nav("home")}
+      </div>
+    `;
+    return;
+  }
+
   app.innerHTML = `
     <div class="screen">
       <div class="header">
@@ -336,8 +360,21 @@ async function admin() {
 
   try {
     const res = await fetch(`${API_URL}/admin/bookings`);
-    const bookings = await res.json();
-    const revenue = bookings.reduce((sum, b) => sum + Number(b.price || 0), 0);
+    const allBookings = await res.json();
+
+    const activeBookings = allBookings.filter(
+      b => b.status === "Новая" || b.status === "Подтверждена"
+    );
+
+    const historyBookings = allBookings.filter(
+      b => b.status === "Выполнена" || b.status === "Отменена"
+    );
+
+    const bookings = adminMode === "active" ? activeBookings : historyBookings;
+
+    const revenue = allBookings
+      .filter(b => b.status !== "Отменена")
+      .reduce((sum, b) => sum + Number(b.price || 0), 0);
 
     app.innerHTML = `
       <div class="screen">
@@ -347,9 +384,14 @@ async function admin() {
         </div>
 
         <div class="admin-grid">
-          <div class="stat"><strong>${bookings.length}</strong><span>Записей</span></div>
-          <div class="stat"><strong>${bookings.filter(b => b.status === "Новая").length}</strong><span>Новых</span></div>
+          <div class="stat"><strong>${activeBookings.length}</strong><span>Активных</span></div>
+          <div class="stat"><strong>${historyBookings.length}</strong><span>История</span></div>
           <div class="stat"><strong>${revenue} zł</strong><span>Сумма</span></div>
+        </div>
+
+        <div class="admin-tabs">
+          <button class="${adminMode === "active" ? "tab active" : "tab"}" onclick="setAdminMode('active')">Активные</button>
+          <button class="${adminMode === "history" ? "tab active" : "tab"}" onclick="setAdminMode('history')">История</button>
         </div>
 
         ${bookings.length ? bookings.map(b => `
@@ -361,12 +403,19 @@ async function admin() {
               <p>Мастер: ${b.master}</p>
               <p>${b.date} · ${b.time}</p>
               <p class="price">${b.price} zł · ${b.status}</p>
-              <button class="small-btn" onclick="setStatus(${b.id}, 'Подтверждена')">Подтвердить</button>
-              <button class="small-btn" onclick="setStatus(${b.id}, 'Выполнена')">Выполнена</button>
-              <button class="small-btn" onclick="setStatus(${b.id}, 'Отменена')">Отменить</button>
+
+              ${
+                adminMode === "active"
+                  ? `
+                    <button class="small-btn" onclick="setStatus(${b.id}, 'Подтверждена')">Подтвердить</button>
+                    <button class="small-btn" onclick="setStatus(${b.id}, 'Выполнена')">Выполнена</button>
+                    <button class="small-btn" onclick="setStatus(${b.id}, 'Отменена')">Отменить</button>
+                  `
+                  : ""
+              }
             </div>
           </div>
-        `).join("") : `<p class="muted">Записей пока нет</p>`}
+        `).join("") : `<p class="muted">Здесь пока пусто</p>`}
 
         ${nav("admin")}
       </div>
@@ -374,6 +423,12 @@ async function admin() {
   } catch {
     alert("Не удалось загрузить админку.");
   }
+}
+
+
+function setAdminMode(mode) {
+  adminMode = mode;
+  admin();
 }
 
 async function setStatus(id, status) {
