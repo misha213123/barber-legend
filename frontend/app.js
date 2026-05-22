@@ -13,7 +13,7 @@ const user = tg?.initDataUnsafe?.user || {
   username: "demo_user"
 };
 
-const ADMIN_IDS = ["6863310038"]; // сюда поставь свой Telegram ID
+
 let adminMode = "active";
 
 const services = [
@@ -44,24 +44,40 @@ function haptic() {
   tg?.HapticFeedback?.impactOccurred("light");
 }
 
-function isAdminUser() {
-  return ADMIN_IDS.map(String).includes(String(user.id));
+async function isAdminUser() {
+  try {
+    const res = await fetch(
+      `${API_URL}/me/admin?telegram_id=${user.id}`
+    );
+
+    const data = await res.json();
+
+    return data.is_admin === true;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
 }
 
-function nav(active = "home") {
-  const admin = isAdminUser();
+async function nav(active = "home") {
+  const admin = await isAdminUser();
 
   return `
     <div class="bottom ${admin ? "admin-nav" : "user-nav"}">
       <div class="nav ${active === "home" ? "active" : ""}" onclick="home()"><b>⌂</b>Главная</div>
       <div class="nav ${active === "booking" ? "active" : ""}" onclick="servicesScreen()"><b>▣</b>Запись</div>
       <div class="nav ${active === "my" ? "active" : ""}" onclick="myBookings()"><b>▤</b>Мои записи</div>
-      ${admin ? `<div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()"><b>♙</b>Админ</div>` : ""}
+
+      ${admin ? `
+        <div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()">
+          <b>♙</b>Админ
+        </div>
+      ` : ""}
     </div>
   `;
 }
 
-function home() {
+async function home() {
   haptic();
 
   app.innerHTML = `
@@ -94,7 +110,7 @@ function home() {
         </div>
       `).join("")}
 
-      ${nav("home")}
+      ${await nav("home")}
     </div>
   `;
 }
@@ -122,7 +138,7 @@ function servicesScreen() {
       `).join("")}
 
       <button class="gold-btn" onclick="mastersScreen()">Далее</button>
-      ${nav("booking")}
+      ${await nav("booking")}
     </div>
   `;
 }
@@ -155,7 +171,7 @@ function mastersScreen() {
       `).join("")}
 
       <button class="gold-btn" onclick="timeScreen()">Далее</button>
-      ${nav("booking")}
+      ${await nav("booking")}
     </div>
   `;
 }
@@ -231,7 +247,7 @@ async function timeScreen() {
       </div>
 
       <button class="gold-btn" onclick="confirmBooking()" ${selectedTime ? "" : "disabled"}>Подтвердить запись</button>
-      ${nav("booking")}
+      ${await nav("booking")}
     </div>
   `;
 }
@@ -287,7 +303,7 @@ async function confirmBooking() {
         <p class="muted">${selectedService.name}</p>
         <p>${selectedDay.date} в ${selectedTime}</p>
         <button class="gold-btn" onclick="home()">На главную</button>
-        ${nav("booking")}
+        ${await nav("booking")}
       </div>
     `;
   } catch {
@@ -305,7 +321,7 @@ async function myBookings() {
         <h2>Мои записи</h2>
       </div>
       <p class="muted">Загрузка...</p>
-      ${nav("my")}
+      ${await nav("my")}
     </div>
   `;
 
@@ -332,7 +348,7 @@ async function myBookings() {
           </div>
         `).join("") : `<p class="muted">Записей пока нет</p>`}
 
-        ${nav("my")}
+        ${await nav("my")}
       </div>
     `;
   } catch {
@@ -355,7 +371,7 @@ async function admin() {
         <h2>Админ-панель</h2>
       </div>
       <p class="muted">Загрузка...</p>
-      ${nav("admin")}
+      ${await nav("admin")}
     </div>
   `;
 
