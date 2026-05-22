@@ -135,16 +135,36 @@ def get_my_bookings(telegram_id: str):
 
 
 @app.get("/admin/bookings")
-def get_all_bookings(telegram_id: str = Query(...)):
-    require_admin(telegram_id)
+def admin_bookings(telegram_id: int):
+    if str(telegram_id) not in ADMIN_IDS:
+        raise HTTPException(status_code=403, detail="Not admin")
 
-    cursor.execute("""
-    SELECT * FROM bookings
-    ORDER BY id DESC
-    """)
+    conn = sqlite3.connect("bookings.db")
+    conn.row_factory = sqlite3.Row
 
-    return [row_to_dict(row) for row in cursor.fetchall()]
+    rows = conn.execute("""
+        SELECT *
+        FROM bookings
+        ORDER BY id DESC
+    """).fetchall()
 
+    conn.close()
+
+    result = []
+
+    for row in rows:
+        result.append({
+            "id": row["id"],
+            "client_name": row["client_name"],
+            "service": row["service"],
+            "master": row["master"],
+            "date": row["date"],
+            "time": row["time"],
+            "price": row["price"],
+            "status": row["status"]
+        })
+
+    return result
 
 @app.patch("/admin/bookings/{booking_id}/status")
 def update_booking_status(
