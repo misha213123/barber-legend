@@ -13,6 +13,9 @@ const user = tg?.initDataUnsafe?.user || {
   username: "demo_user"
 };
 
+const ADMIN_IDS = ["625010756"]; // сюда поставь свой Telegram ID
+let adminMode = "active";
+
 const services = [
   { id: 1, name: "Стрижка", desc: "Классическая мужская стрижка с укладкой", duration: 45, price: 120, icon: "✂️", img: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=600&auto=format&fit=crop" },
   { id: 2, name: "Стрижка + борода", desc: "Стрижка и оформление бороды", duration: 60, price: 160, icon: "🧔", img: "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=600&auto=format&fit=crop" },
@@ -36,32 +39,31 @@ let selectedTime = "13:00";
 let busyTimes = [];
 
 const app = document.getElementById("app");
-const ADMIN_IDS = ["625010756"];
-let adminMode = "active";
 
 function haptic() {
   tg?.HapticFeedback?.impactOccurred("light");
 }
 
+function isAdminUser() {
+  return ADMIN_IDS.map(String).includes(String(user.id));
+}
+
 function nav(active = "home") {
-  const isAdmin = ADMIN_IDS.includes(String(user.id));
+  const admin = isAdminUser();
 
   return `
-    <div class="bottom">
+    <div class="bottom ${admin ? "admin-nav" : "user-nav"}">
       <div class="nav ${active === "home" ? "active" : ""}" onclick="home()"><b>⌂</b>Главная</div>
       <div class="nav ${active === "booking" ? "active" : ""}" onclick="servicesScreen()"><b>▣</b>Запись</div>
       <div class="nav ${active === "my" ? "active" : ""}" onclick="myBookings()"><b>▤</b>Мои записи</div>
-      ${
-        isAdmin
-          ? `<div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()"><b>♙</b>Админ</div>`
-          : `<div class="nav"><b>★</b>Legend</div>`
-      }
+      ${admin ? `<div class="nav ${active === "admin" ? "active" : ""}" onclick="admin()"><b>♙</b>Админ</div>` : ""}
     </div>
   `;
 }
 
 function home() {
   haptic();
+
   app.innerHTML = `
     <div class="screen">
       <div class="top">
@@ -99,6 +101,7 @@ function home() {
 
 function servicesScreen() {
   haptic();
+
   app.innerHTML = `
     <div class="screen">
       <div class="header">
@@ -131,6 +134,7 @@ function selectService(id) {
 
 function mastersScreen() {
   haptic();
+
   app.innerHTML = `
     <div class="screen">
       <div class="header">
@@ -166,6 +170,10 @@ async function loadBusySlots() {
     const url = `${API_URL}/slots/busy?master=${encodeURIComponent(selectedMaster.name)}&date=${encodeURIComponent(selectedDay.date)}`;
     const res = await fetch(url);
     busyTimes = await res.json();
+
+    if (busyTimes.includes(selectedTime)) {
+      selectedTime = times.find(t => !busyTimes.includes(t)) || "";
+    }
   } catch {
     busyTimes = [];
   }
@@ -204,9 +212,8 @@ async function timeScreen() {
           const busy = busyTimes.includes(t);
           return `
             <button 
-              class="time ${selectedTime === t ? "active" : ""}" 
+              class="time ${selectedTime === t ? "active" : ""} ${busy ? "busy" : ""}" 
               onclick="${busy ? "" : `selectTime('${t}')`}"
-              style="${busy ? "opacity:.35; pointer-events:none;" : ""}"
             >
               ${busy ? "Занято" : t}
             </button>
@@ -219,11 +226,11 @@ async function timeScreen() {
         <div class="details-row"><span class="muted">Услуга</span><span>${selectedService.name}</span></div>
         <div class="details-row"><span class="muted">Мастер</span><span>${selectedMaster.name}</span></div>
         <div class="details-row"><span class="muted">Дата</span><span>${selectedDay.date}</span></div>
-        <div class="details-row"><span class="muted">Время</span><span>${selectedTime}</span></div>
+        <div class="details-row"><span class="muted">Время</span><span>${selectedTime || "Нет времени"}</span></div>
         <div class="details-row total"><span>Итого</span><span>${selectedService.price} zł</span></div>
       </div>
 
-      <button class="gold-btn" onclick="confirmBooking()">Подтвердить запись</button>
+      <button class="gold-btn" onclick="confirmBooking()" ${selectedTime ? "" : "disabled"}>Подтвердить запись</button>
       ${nav("booking")}
     </div>
   `;
@@ -241,6 +248,11 @@ function selectTime(time) {
 
 async function confirmBooking() {
   haptic();
+
+  if (!selectedTime) {
+    alert("Нет свободного времени.");
+    return;
+  }
 
   const payload = {
     telegram_id: String(user.id),
@@ -331,19 +343,8 @@ async function myBookings() {
 async function admin() {
   haptic();
 
-  const isAdmin = ADMIN_IDS.includes(String(user.id));
-
-  if (!isAdmin) {
-    app.innerHTML = `
-      <div class="screen">
-        <div class="header">
-          <div class="back" onclick="home()">←</div>
-          <h2>Нет доступа</h2>
-        </div>
-        <p class="muted">Админ-панель доступна только владельцу барбершопа.</p>
-        ${nav("home")}
-      </div>
-    `;
+  if (!isAdminUser()) {
+    home();
     return;
   }
 
@@ -359,7 +360,14 @@ async function admin() {
   `;
 
   try {
-    const res = await fetch(`${API_URL}/admin/bookings`);
+    const res = await fetch(`${API_URL}/admin/bookings?telegram_id=${encodeURIComponent(user.id)}`);
+
+    if (res.status === 403) {
+      alert("Нет доступа к админке.");
+      home();
+      return;
+    }
+
     const allBookings = await res.json();
 
     const activeBookings = allBookings.filter(
@@ -404,15 +412,11 @@ async function admin() {
               <p>${b.date} · ${b.time}</p>
               <p class="price">${b.price} zł · ${b.status}</p>
 
-              ${
-                adminMode === "active"
-                  ? `
-                    <button class="small-btn" onclick="setStatus(${b.id}, 'Подтверждена')">Подтвердить</button>
-                    <button class="small-btn" onclick="setStatus(${b.id}, 'Выполнена')">Выполнена</button>
-                    <button class="small-btn" onclick="setStatus(${b.id}, 'Отменена')">Отменить</button>
-                  `
-                  : ""
-              }
+              ${adminMode === "active" ? `
+                <button class="small-btn" onclick="setStatus(${b.id}, 'Подтверждена')">Подтвердить</button>
+                <button class="small-btn" onclick="setStatus(${b.id}, 'Выполнена')">Выполнена</button>
+                <button class="small-btn" onclick="setStatus(${b.id}, 'Отменена')">Отменить</button>
+              ` : ""}
             </div>
           </div>
         `).join("") : `<p class="muted">Здесь пока пусто</p>`}
@@ -425,7 +429,6 @@ async function admin() {
   }
 }
 
-
 function setAdminMode(mode) {
   adminMode = mode;
   admin();
@@ -435,22 +438,17 @@ async function setStatus(id, status) {
   haptic();
 
   try {
-    const res = await fetch(`${API_URL}/admin/bookings/${id}/status`, {
+    const res = await fetch(`${API_URL}/admin/bookings/${id}/status?telegram_id=${encodeURIComponent(user.id)}`, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ status: status })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status })
     });
 
-    if (!res.ok) {
-      throw new Error("Status update failed");
-    }
+    if (!res.ok) throw new Error();
 
-    await admin();
-  } catch (error) {
-    alert("Не удалось изменить статус. Проверь backend.");
-    console.error(error);
+    admin();
+  } catch {
+    alert("Не удалось изменить статус.");
   }
 }
 

@@ -379,3 +379,43 @@ body {
   color: #111;
   border: none;
 }
+
+.bottom.user-nav {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.bottom.admin-nav {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.time.busy {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.gold-btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.admin-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.tab {
+  height: 46px;
+  border: 1px solid #242424;
+  border-radius: 12px;
+  background: #141416;
+  color: #999;
+  font-weight: 800;
+}
+
+.tab.active {
+  background: linear-gradient(135deg, #f2cf78, #b9832d);
+  color: #111;
+  border: none;
+}

@@ -1,8 +1,10 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+import os
 import sqlite3
 from typing import Optional
+
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 app = FastAPI(title="Legend Barbershop API")
 
@@ -13,6 +15,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+ADMIN_IDS = [
+    item.strip()
+    for item in os.getenv("ADMIN_IDS", "").split(",")
+    if item.strip()
+]
 
 conn = sqlite3.connect("bookings.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -49,6 +57,15 @@ class StatusUpdate(BaseModel):
     status: str
 
 
+def is_admin(telegram_id: str) -> bool:
+    return str(telegram_id) in ADMIN_IDS
+
+
+def require_admin(telegram_id: str):
+    if not is_admin(telegram_id):
+        raise HTTPException(status_code=403, detail="Нет доступа")
+
+
 def row_to_dict(row):
     return {
         "id": row[0],
@@ -69,6 +86,11 @@ def root():
     return {"status": "ok", "app": "Legend Barbershop"}
 
 
+@app.get("/me/admin")
+def check_admin(telegram_id: str):
+    return {"is_admin": is_admin(telegram_id)}
+
+
 @app.post("/bookings")
 def create_booking(data: BookingCreate):
     cursor.execute("""
@@ -76,9 +98,7 @@ def create_booking(data: BookingCreate):
     WHERE master = ? AND date = ? AND time = ? AND status != 'Отменена'
     """, (data.master, data.date, data.time))
 
-    exists = cursor.fetchone()
-
-    if exists:
+    if cursor.fetchone():
         raise HTTPException(status_code=409, detail="Это время уже занято")
 
     cursor.execute("""
@@ -100,7 +120,6 @@ def create_booking(data: BookingCreate):
     ))
 
     conn.commit()
-
     return {"success": True, "booking_id": cursor.lastrowid}
 
 
@@ -116,7 +135,9 @@ def get_my_bookings(telegram_id: str):
 
 
 @app.get("/admin/bookings")
-def get_all_bookings():
+def get_all_bookings(telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+
     cursor.execute("""
     SELECT * FROM bookings
     ORDER BY id DESC
@@ -126,7 +147,13 @@ def get_all_bookings():
 
 
 @app.patch("/admin/bookings/{booking_id}/status")
-def update_booking_status(booking_id: int, data: StatusUpdate):
+def update_booking_status(
+    booking_id: int,
+    data: StatusUpdate,
+    telegram_id: str = Query(...)
+):
+    require_admin(telegram_id)
+
     cursor.execute("""
     UPDATE bookings
     SET status = ?
@@ -134,7 +161,6 @@ def update_booking_status(booking_id: int, data: StatusUpdate):
     """, (data.status, booking_id))
 
     conn.commit()
-
     return {"success": True}
 
 
