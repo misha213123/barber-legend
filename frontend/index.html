@@ -25,8 +25,19 @@
   <script src="js/admin.js"></script>
 
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      home();
+    document.addEventListener("DOMContentLoaded", async () => {
+      try {
+        await home();
+      } catch (e) {
+        console.error(e);
+        document.getElementById("app").innerHTML = `
+          <div class="screen">
+            <h2>Ошибка запуска</h2>
+            <p class="muted">Открой консоль браузера или проверь подключение файлов.</p>
+            <button class="gold-btn" onclick="location.reload()">Обновить</button>
+          </div>
+        `;
+      }
     });
   </script>
 </body>

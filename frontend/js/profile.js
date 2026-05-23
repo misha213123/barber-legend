@@ -7,8 +7,6 @@ const COUNTRY_CODES = [
   { name: "Другая", code: "+", flag: "🌍" }
 ];
 
-let selectedCountryCode = "+48";
-
 async function loadMyProfile() {
   try {
     currentProfile = await api(`/me/profile?telegram_id=${encodeURIComponent(user.id)}`);
@@ -121,6 +119,6 @@ async function saveUserProfile() {
     currentProfile = null;
     await home();
   } catch {
-    alert("Не удалось сохранить данные.");
+    alert("Не удалось сохранить данные. Проверь backend deploy.");
   }
 }
