@@ -18,15 +18,21 @@ async function admin() {
     return;
   }
 
+  if (adminSection === "works") {
+    await adminWorks();
+    return;
+  }
+
   await adminBookings();
 }
 
 function adminMainTabs() {
   return `
-    <div class="admin-tabs three-tabs">
+    <div class="admin-tabs four-tabs">
       <button class="${adminSection === "bookings" ? "tab active" : "tab"}" onclick="setAdminSection('bookings')">Записи</button>
       <button class="${adminSection === "services" ? "tab active" : "tab"}" onclick="setAdminSection('services')">Услуги</button>
       <button class="${adminSection === "masters" ? "tab active" : "tab"}" onclick="setAdminSection('masters')">Мастера</button>
+      <button class="${adminSection === "works" ? "tab active" : "tab"}" onclick="setAdminSection('works')">Работы</button>
     </div>
   `;
 }
@@ -83,7 +89,7 @@ async function adminBookings() {
         </div>
 
         ${bookings.length ? bookings.map(b => `
-          <div class="card">
+          <div class="card lift-card">
             <div class="icon">✂️</div>
             <div>
               <h3>${b.service}</h3>
@@ -144,7 +150,7 @@ async function adminServices() {
       <button class="gold-btn" onclick="createService()">+ Добавить услугу</button>
 
       ${services.map(s => `
-        <div class="card admin-edit-card">
+        <div class="card admin-edit-card lift-card">
           <div class="card-img" style="background-image:url('${s.img || s.image || ""}')"></div>
           <div>
             <h3>${s.name}</h3>
@@ -153,6 +159,7 @@ async function adminServices() {
             <p>${Number(s.is_active) === 1 ? "🟢 Активна" : "🔴 Скрыта"}</p>
 
             <button class="small-btn" onclick="editService(${s.id})">Редактировать</button>
+            <button class="small-btn" onclick="changeServicePhoto(${s.id})">Фото</button>
             <button class="small-btn" onclick="toggleService(${s.id}, ${Number(s.is_active) === 1 ? 0 : 1})">
               ${Number(s.is_active) === 1 ? "Скрыть" : "Показать"}
             </button>
@@ -181,7 +188,7 @@ async function adminMasters() {
       <button class="gold-btn" onclick="createMaster()">+ Добавить мастера</button>
 
       ${masters.map(m => `
-        <div class="card admin-edit-card">
+        <div class="card admin-edit-card lift-card">
           <div class="master-avatar" style="background-image:url('${m.img || m.image || ""}')"></div>
           <div>
             <h3>${m.name}</h3>
@@ -190,10 +197,48 @@ async function adminMasters() {
             <p>${Number(m.is_active) === 1 ? "🟢 Активен" : "🔴 Скрыт"}</p>
 
             <button class="small-btn" onclick="editMaster(${m.id})">Редактировать</button>
+            <button class="small-btn" onclick="changeMasterPhoto(${m.id})">Заменить фото</button>
+            <button class="small-btn" onclick="editMasterHours(${m.id})">Часы работы</button>
             <button class="small-btn" onclick="toggleMaster(${m.id}, ${Number(m.is_active) === 1 ? 0 : 1})">
               ${Number(m.is_active) === 1 ? "Скрыть" : "Показать"}
             </button>
             <button class="small-btn danger" onclick="deleteMaster(${m.id})">Удалить</button>
+          </div>
+        </div>
+      `).join("")}
+
+      ${await nav("admin")}
+    </div>
+  `;
+}
+
+async function adminWorks() {
+  await loadWorkPhotos(true);
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="header">
+        <div class="back" onclick="home()">←</div>
+        <h2>Фото работ</h2>
+      </div>
+
+      ${adminMainTabs()}
+
+      <button class="gold-btn" onclick="createWorkPhoto()">+ Добавить фото работы</button>
+
+      ${workPhotos.map(p => `
+        <div class="card admin-edit-card lift-card">
+          <div class="card-img" style="background-image:url('${p.img || p.image || ""}')"></div>
+          <div>
+            <h3>${p.title || "Работа мастера"}</h3>
+            <p>${p.master ? `Мастер: ${p.master}` : "Без мастера"}</p>
+            <p>${Number(p.is_active) === 1 ? "🟢 Показывается" : "🔴 Скрыта"}</p>
+
+            <button class="small-btn" onclick="editWorkPhoto(${p.id})">Редактировать</button>
+            <button class="small-btn" onclick="toggleWorkPhoto(${p.id}, ${Number(p.is_active) === 1 ? 0 : 1})">
+              ${Number(p.is_active) === 1 ? "Скрыть" : "Показать"}
+            </button>
+            <button class="small-btn danger" onclick="deleteWorkPhoto(${p.id})">Удалить</button>
           </div>
         </div>
       `).join("")}
@@ -249,6 +294,26 @@ async function editService(id) {
     await adminServices();
   } catch {
     alert("Не удалось изменить услугу.");
+  }
+}
+
+async function changeServicePhoto(id) {
+  const s = services.find(item => Number(item.id) === Number(id));
+  if (!s) return;
+
+  const image = prompt("Новая ссылка на фото услуги:", s.img || s.image || "");
+  if (!image) return;
+
+  try {
+    await api(`/admin/services/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ image })
+    });
+
+    services = [];
+    await adminServices();
+  } catch {
+    alert("Не удалось заменить фото услуги.");
   }
 }
 
@@ -328,6 +393,64 @@ async function editMaster(id) {
   }
 }
 
+async function changeMasterPhoto(id) {
+  const m = masters.find(item => Number(item.id) === Number(id));
+  if (!m) return;
+
+  const image = prompt("Новая ссылка на фото мастера:", m.img || m.image || "");
+  if (!image) return;
+
+  try {
+    await api(`/admin/masters/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ image })
+    });
+
+    masters = [];
+    await adminMasters();
+  } catch {
+    alert("Не удалось заменить фото мастера.");
+  }
+}
+
+async function editMasterHours(id) {
+  const m = masters.find(item => Number(item.id) === Number(id));
+  if (!m) return;
+
+  try {
+    const currentHours = await api(`/admin/masters/${id}/hours?telegram_id=${encodeURIComponent(user.id)}`);
+    const nextHours = [];
+
+    for (const h of currentHours) {
+      const workingAnswer = prompt(`${m.name}: ${h.day_label}. Работает? 1 = да, 0 = нет`, String(h.is_working));
+      if (workingAnswer === null) return;
+
+      const startTime = prompt(`${m.name}: ${h.day_label}. Начало работы:`, h.start_time || "09:00");
+      if (startTime === null) return;
+
+      const endTime = prompt(`${m.name}: ${h.day_label}. Конец работы:`, h.end_time || "20:00");
+      if (endTime === null) return;
+
+      nextHours.push({
+        day_label: h.day_label,
+        start_time: startTime || "09:00",
+        end_time: endTime || "20:00",
+        is_working: Number(workingAnswer) === 1 ? 1 : 0
+      });
+    }
+
+    await api(`/admin/masters/${id}/hours?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ hours: nextHours })
+    });
+
+    alert("Часы работы сохранены.");
+    await adminMasters();
+  } catch {
+    alert("Не удалось сохранить часы работы.");
+  }
+}
+
 async function toggleMaster(id, value) {
   try {
     await api(`/admin/masters/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
@@ -354,5 +477,77 @@ async function deleteMaster(id) {
     await adminMasters();
   } catch {
     alert("Не удалось удалить мастера.");
+  }
+}
+
+async function createWorkPhoto() {
+  const image = prompt("Ссылка на фото работы:");
+  if (!image) return;
+
+  const title = prompt("Название/описание работы:", "Работа мастера");
+  const master = prompt("Имя мастера (можно оставить пустым):", "");
+
+  try {
+    await api(`/admin/work-photos?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "POST",
+      body: JSON.stringify({ image, title, master, is_active: 1 })
+    });
+
+    workPhotos = [];
+    await adminWorks();
+  } catch {
+    alert("Не удалось добавить фото работы.");
+  }
+}
+
+async function editWorkPhoto(id) {
+  const p = workPhotos.find(item => Number(item.id) === Number(id));
+  if (!p) return;
+
+  const image = prompt("Ссылка на фото работы:", p.img || p.image || "");
+  if (!image) return;
+
+  const title = prompt("Название/описание:", p.title || "");
+  const master = prompt("Имя мастера:", p.master || "");
+
+  try {
+    await api(`/admin/work-photos/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ image, title, master })
+    });
+
+    workPhotos = [];
+    await adminWorks();
+  } catch {
+    alert("Не удалось изменить фото работы.");
+  }
+}
+
+async function toggleWorkPhoto(id, value) {
+  try {
+    await api(`/admin/work-photos/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: value })
+    });
+
+    workPhotos = [];
+    await adminWorks();
+  } catch {
+    alert("Не удалось изменить видимость фото.");
+  }
+}
+
+async function deleteWorkPhoto(id) {
+  if (!confirm("Удалить фото работы?")) return;
+
+  try {
+    await api(`/admin/work-photos/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "DELETE"
+    });
+
+    workPhotos = [];
+    await adminWorks();
+  } catch {
+    alert("Не удалось удалить фото работы.");
   }
 }

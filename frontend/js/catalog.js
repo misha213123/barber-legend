@@ -12,6 +12,12 @@ const fallbackMasters = [
   { id: 4, name: "Игорь", role: "Барбер", rating: "4.7", reviews: 98, img: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=300&auto=format&fit=crop", is_active: 1 }
 ];
 
+const fallbackWorkPhotos = [
+  { id: 1, title: "Fade cut", master: "", img: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=700&auto=format&fit=crop", image: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=700&auto=format&fit=crop", is_active: 1 },
+  { id: 2, title: "Beard style", master: "", img: "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=700&auto=format&fit=crop", image: "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=700&auto=format&fit=crop", is_active: 1 },
+  { id: 3, title: "Classic cut", master: "", img: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=700&auto=format&fit=crop", image: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=700&auto=format&fit=crop", is_active: 1 }
+];
+
 async function loadCatalog(includeInactive = false) {
   try {
     const servicesData = await api(`/services${includeInactive ? "?include_inactive=1" : ""}`);
@@ -24,11 +30,20 @@ async function loadCatalog(includeInactive = false) {
     masters = fallbackMasters;
   }
 
-  if (!selectedService || !services.find(s => s.id === selectedService.id)) {
+  if (!selectedService || !services.find(s => Number(s.id) === Number(selectedService.id))) {
     selectedService = services.find(s => Number(s.is_active) === 1) || services[0];
   }
 
-  if (!selectedMaster || !masters.find(m => m.id === selectedMaster.id)) {
+  if (!selectedMaster || !masters.find(m => Number(m.id) === Number(selectedMaster.id))) {
     selectedMaster = masters.find(m => Number(m.is_active) === 1) || masters[0];
+  }
+}
+
+async function loadWorkPhotos(includeInactive = false) {
+  try {
+    const data = await api(`/work-photos${includeInactive ? "?include_inactive=1" : ""}`);
+    workPhotos = data.length ? data : fallbackWorkPhotos;
+  } catch (e) {
+    workPhotos = fallbackWorkPhotos;
   }
 }

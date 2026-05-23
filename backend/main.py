@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +23,10 @@ ADMIN_IDS = [
 ]
 
 DB_PATH = "bookings.db"
+DEFAULT_WORK_START = "09:00"
+DEFAULT_WORK_END = "20:00"
+DEFAULT_DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+VALID_STATUSES = ["Новая", "Подтверждена", "Выполнена", "Отменена"]
 
 
 def get_conn():
@@ -38,6 +42,27 @@ def is_admin(telegram_id: str) -> bool:
 def require_admin(telegram_id: str):
     if not is_admin(telegram_id):
         raise HTTPException(status_code=403, detail="Not admin")
+
+
+def column_exists(conn, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row["name"] == column for row in rows)
+
+
+def ensure_master_hours(conn, master_id: int):
+    existing = conn.execute(
+        "SELECT day_label FROM master_hours WHERE master_id = ?",
+        (master_id,)
+    ).fetchall()
+    existing_labels = {row["day_label"] for row in existing}
+
+    for day in DEFAULT_DAYS:
+        if day not in existing_labels:
+            is_working = 0 if day == "Вс" else 1
+            conn.execute("""
+                INSERT INTO master_hours (master_id, day_label, start_time, end_time, is_working)
+                VALUES (?, ?, ?, ?, ?)
+            """, (master_id, day, DEFAULT_WORK_START, DEFAULT_WORK_END, is_working))
 
 
 def init_db():
@@ -83,8 +108,34 @@ def init_db():
     )
     """)
 
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS work_photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        image TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        master TEXT DEFAULT '',
+        is_active INTEGER DEFAULT 1
+    )
+    """)
+
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS master_hours (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        master_id INTEGER NOT NULL,
+        day_label TEXT NOT NULL,
+        start_time TEXT DEFAULT '09:00',
+        end_time TEXT DEFAULT '20:00',
+        is_working INTEGER DEFAULT 1,
+        UNIQUE(master_id, day_label)
+    )
+    """)
+
+    if not column_exists(conn, "work_photos", "master"):
+        conn.execute("ALTER TABLE work_photos ADD COLUMN master TEXT DEFAULT ''")
+
     services_count = conn.execute("SELECT COUNT(*) FROM services").fetchone()[0]
     masters_count = conn.execute("SELECT COUNT(*) FROM masters").fetchone()[0]
+    photos_count = conn.execute("SELECT COUNT(*) FROM work_photos").fetchone()[0]
 
     if services_count == 0:
         default_services = [
@@ -93,7 +144,6 @@ def init_db():
             ("Королевское бритьё", "Бритьё опасной бритвой + уход", 40, 110, "🪒", "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=600&auto=format&fit=crop", 1),
             ("Детская стрижка", "Стрижка для детей до 12 лет", 30, 90, "👦", "https://images.unsplash.com/photo-1605497788044-5a32c7078486?q=80&w=600&auto=format&fit=crop", 1),
         ]
-
         conn.executemany("""
         INSERT INTO services (name, description, duration, price, icon, image, is_active)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -106,11 +156,25 @@ def init_db():
             ("Максим", "Барбер", "4.9", 112, "https://images.unsplash.com/photo-1590086783191-a0694c7d1e6e?q=80&w=300&auto=format&fit=crop", 1),
             ("Игорь", "Барбер", "4.7", 98, "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=300&auto=format&fit=crop", 1),
         ]
-
         conn.executemany("""
         INSERT INTO masters (name, role, rating, reviews, image, is_active)
         VALUES (?, ?, ?, ?, ?, ?)
         """, default_masters)
+
+    if photos_count == 0:
+        default_photos = [
+            ("https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=700&auto=format&fit=crop", "Fade cut", "", 1),
+            ("https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=700&auto=format&fit=crop", "Beard style", "", 1),
+            ("https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=700&auto=format&fit=crop", "Classic cut", "", 1),
+        ]
+        conn.executemany("""
+        INSERT INTO work_photos (image, title, master, is_active)
+        VALUES (?, ?, ?, ?)
+        """, default_photos)
+
+    master_rows = conn.execute("SELECT id FROM masters").fetchall()
+    for row in master_rows:
+        ensure_master_hours(conn, row["id"])
 
     conn.commit()
     conn.close()
@@ -128,6 +192,11 @@ class BookingCreate(BaseModel):
     date: str
     time: str
     price: int
+
+
+class BookingReschedule(BaseModel):
+    date: str
+    time: str
 
 
 class StatusUpdate(BaseModel):
@@ -170,6 +239,31 @@ class MasterUpdate(BaseModel):
     reviews: Optional[int] = None
     image: Optional[str] = None
     is_active: Optional[int] = None
+
+
+class WorkPhotoCreate(BaseModel):
+    image: str
+    title: Optional[str] = ""
+    master: Optional[str] = ""
+    is_active: int = 1
+
+
+class WorkPhotoUpdate(BaseModel):
+    image: Optional[str] = None
+    title: Optional[str] = None
+    master: Optional[str] = None
+    is_active: Optional[int] = None
+
+
+class MasterHourUpdate(BaseModel):
+    day_label: str
+    start_time: str = DEFAULT_WORK_START
+    end_time: str = DEFAULT_WORK_END
+    is_working: int = 1
+
+
+class MasterHoursUpdate(BaseModel):
+    hours: List[MasterHourUpdate]
 
 
 def booking_to_dict(row):
@@ -215,13 +309,60 @@ def master_to_dict(row):
     }
 
 
+def work_photo_to_dict(row):
+    return {
+        "id": row["id"],
+        "image": row["image"],
+        "img": row["image"],
+        "title": row["title"],
+        "master": row["master"],
+        "is_active": row["is_active"],
+    }
+
+
+def master_hour_to_dict(row):
+    return {
+        "id": row["id"],
+        "master_id": row["master_id"],
+        "day_label": row["day_label"],
+        "start_time": row["start_time"],
+        "end_time": row["end_time"],
+        "is_working": row["is_working"],
+    }
+
+
+def time_to_minutes(value: str) -> int:
+    try:
+        hours, minutes = value.split(":")
+        return int(hours) * 60 + int(minutes)
+    except Exception:
+        return 0
+
+
+def validate_status(status: str):
+    if status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail="Wrong status")
+
+
+def check_slot_available(conn, master: str, date: str, time: str, exclude_booking_id: Optional[int] = None):
+    if exclude_booking_id is None:
+        exists = conn.execute("""
+            SELECT id FROM bookings
+            WHERE master = ? AND date = ? AND time = ? AND status != 'Отменена'
+        """, (master, date, time)).fetchone()
+    else:
+        exists = conn.execute("""
+            SELECT id FROM bookings
+            WHERE master = ? AND date = ? AND time = ? AND status != 'Отменена' AND id != ?
+        """, (master, date, time, exclude_booking_id)).fetchone()
+
+    if exists:
+        raise HTTPException(status_code=409, detail="Это время уже занято")
+
+
 @app.get("/")
 def root():
-    return {
-        "status": "ok",
-        "app": "Legend Barbershop",
-        "admins": len(ADMIN_IDS)
-    }
+    return {"status": "ok", "app": "Legend Barbershop", "admins": len(ADMIN_IDS)}
 
 
 @app.get("/me/admin")
@@ -232,12 +373,10 @@ def check_admin(telegram_id: str):
 @app.get("/services")
 def get_services(include_inactive: int = 0):
     conn = get_conn()
-
     if include_inactive:
         rows = conn.execute("SELECT * FROM services ORDER BY id DESC").fetchall()
     else:
         rows = conn.execute("SELECT * FROM services WHERE is_active = 1 ORDER BY id DESC").fetchall()
-
     conn.close()
     return [service_to_dict(row) for row in rows]
 
@@ -245,28 +384,29 @@ def get_services(include_inactive: int = 0):
 @app.get("/masters")
 def get_masters(include_inactive: int = 0):
     conn = get_conn()
-
     if include_inactive:
         rows = conn.execute("SELECT * FROM masters ORDER BY id DESC").fetchall()
     else:
         rows = conn.execute("SELECT * FROM masters WHERE is_active = 1 ORDER BY id DESC").fetchall()
-
     conn.close()
     return [master_to_dict(row) for row in rows]
+
+
+@app.get("/work-photos")
+def get_work_photos(include_inactive: int = 0):
+    conn = get_conn()
+    if include_inactive:
+        rows = conn.execute("SELECT * FROM work_photos ORDER BY id DESC").fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM work_photos WHERE is_active = 1 ORDER BY id DESC").fetchall()
+    conn.close()
+    return [work_photo_to_dict(row) for row in rows]
 
 
 @app.post("/bookings")
 def create_booking(data: BookingCreate):
     conn = get_conn()
-
-    exists = conn.execute("""
-        SELECT id FROM bookings
-        WHERE master = ? AND date = ? AND time = ? AND status != 'Отменена'
-    """, (data.master, data.date, data.time)).fetchone()
-
-    if exists:
-        conn.close()
-        raise HTTPException(status_code=409, detail="Это время уже занято")
+    check_slot_available(conn, data.master, data.date, data.time)
 
     cur = conn.execute("""
         INSERT INTO bookings (
@@ -289,111 +429,149 @@ def create_booking(data: BookingCreate):
     conn.commit()
     booking_id = cur.lastrowid
     conn.close()
-
     return {"success": True, "booking_id": booking_id}
 
 
 @app.get("/bookings/{telegram_id}")
 def get_my_bookings(telegram_id: str):
     conn = get_conn()
-
     rows = conn.execute("""
         SELECT * FROM bookings
         WHERE telegram_id = ?
         ORDER BY id DESC
     """, (telegram_id,)).fetchall()
-
     conn.close()
     return [booking_to_dict(row) for row in rows]
+
+
+@app.patch("/bookings/{booking_id}/cancel")
+def cancel_my_booking(booking_id: int, telegram_id: str = Query(...)):
+    conn = get_conn()
+    booking = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+
+    if not booking:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if str(booking["telegram_id"]) != str(telegram_id):
+        conn.close()
+        raise HTTPException(status_code=403, detail="Not your booking")
+
+    if booking["status"] in ["Выполнена", "Отменена"]:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Эту запись уже нельзя отменить")
+
+    conn.execute("UPDATE bookings SET status = 'Отменена' WHERE id = ?", (booking_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.patch("/bookings/{booking_id}/reschedule")
+def reschedule_my_booking(booking_id: int, data: BookingReschedule, telegram_id: str = Query(...)):
+    conn = get_conn()
+    booking = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+
+    if not booking:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if str(booking["telegram_id"]) != str(telegram_id):
+        conn.close()
+        raise HTTPException(status_code=403, detail="Not your booking")
+
+    if booking["status"] in ["Выполнена", "Отменена"]:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Эту запись уже нельзя перенести")
+
+    check_slot_available(conn, booking["master"], data.date, data.time, booking_id)
+
+    conn.execute("""
+        UPDATE bookings
+        SET date = ?, time = ?, status = 'Новая'
+        WHERE id = ?
+    """, (data.date, data.time, booking_id))
+
+    conn.commit()
+    conn.close()
+    return {"success": True}
 
 
 @app.get("/admin/bookings")
 def admin_bookings(telegram_id: str = Query(...)):
     require_admin(telegram_id)
-
     conn = get_conn()
-
-    rows = conn.execute("""
-        SELECT * FROM bookings
-        ORDER BY id DESC
-    """).fetchall()
-
+    rows = conn.execute("SELECT * FROM bookings ORDER BY id DESC").fetchall()
     conn.close()
     return [booking_to_dict(row) for row in rows]
 
 
 @app.patch("/admin/bookings/{booking_id}/status")
-def update_booking_status(
-    booking_id: int,
-    data: StatusUpdate,
-    telegram_id: str = Query(...)
-):
+def update_booking_status(booking_id: int, data: StatusUpdate, telegram_id: str = Query(...)):
     require_admin(telegram_id)
+    validate_status(data.status)
 
     conn = get_conn()
-
-    conn.execute("""
-        UPDATE bookings
-        SET status = ?
-        WHERE id = ?
-    """, (data.status, booking_id))
-
+    conn.execute("UPDATE bookings SET status = ? WHERE id = ?", (data.status, booking_id))
     conn.commit()
     conn.close()
-
     return {"success": True}
 
 
 @app.get("/slots/busy")
 def busy_slots(master: str, date: str):
     conn = get_conn()
-
     rows = conn.execute("""
         SELECT time FROM bookings
         WHERE master = ? AND date = ? AND status != 'Отменена'
     """, (master, date)).fetchall()
-
     conn.close()
     return [row["time"] for row in rows]
+
+
+@app.get("/master-hours")
+def get_public_master_hours(master: str, day_label: str):
+    conn = get_conn()
+    master_row = conn.execute("SELECT id FROM masters WHERE name = ?", (master,)).fetchone()
+
+    if not master_row:
+        conn.close()
+        return {"day_label": day_label, "start_time": DEFAULT_WORK_START, "end_time": DEFAULT_WORK_END, "is_working": 1}
+
+    ensure_master_hours(conn, master_row["id"])
+    conn.commit()
+
+    row = conn.execute("""
+        SELECT * FROM master_hours
+        WHERE master_id = ? AND day_label = ?
+    """, (master_row["id"], day_label)).fetchone()
+    conn.close()
+
+    if not row:
+        return {"day_label": day_label, "start_time": DEFAULT_WORK_START, "end_time": DEFAULT_WORK_END, "is_working": 1}
+
+    return master_hour_to_dict(row)
 
 
 @app.post("/admin/services")
 def admin_create_service(data: ServiceCreate, telegram_id: str = Query(...)):
     require_admin(telegram_id)
-
     conn = get_conn()
-
     cur = conn.execute("""
         INSERT INTO services (name, description, duration, price, icon, image, is_active)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        data.name,
-        data.description,
-        data.duration,
-        data.price,
-        data.icon,
-        data.image,
-        data.is_active
-    ))
-
+    """, (data.name, data.description, data.duration, data.price, data.icon, data.image, data.is_active))
     conn.commit()
     service_id = cur.lastrowid
     conn.close()
-
     return {"success": True, "id": service_id}
 
 
 @app.patch("/admin/services/{service_id}")
-def admin_update_service(
-    service_id: int,
-    data: ServiceUpdate,
-    telegram_id: str = Query(...)
-):
+def admin_update_service(service_id: int, data: ServiceUpdate, telegram_id: str = Query(...)):
     require_admin(telegram_id)
-
     fields = []
     values = []
-
     mapping = {
         "name": data.name,
         "description": data.description,
@@ -413,69 +591,43 @@ def admin_update_service(
         return {"success": True}
 
     values.append(service_id)
-
     conn = get_conn()
-
-    conn.execute(f"""
-        UPDATE services
-        SET {", ".join(fields)}
-        WHERE id = ?
-    """, values)
-
+    conn.execute(f"UPDATE services SET {', '.join(fields)} WHERE id = ?", values)
     conn.commit()
     conn.close()
-
     return {"success": True}
 
 
 @app.delete("/admin/services/{service_id}")
 def admin_delete_service(service_id: int, telegram_id: str = Query(...)):
     require_admin(telegram_id)
-
     conn = get_conn()
     conn.execute("DELETE FROM services WHERE id = ?", (service_id,))
     conn.commit()
     conn.close()
-
     return {"success": True}
 
 
 @app.post("/admin/masters")
 def admin_create_master(data: MasterCreate, telegram_id: str = Query(...)):
     require_admin(telegram_id)
-
     conn = get_conn()
-
     cur = conn.execute("""
         INSERT INTO masters (name, role, rating, reviews, image, is_active)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        data.name,
-        data.role,
-        data.rating,
-        data.reviews,
-        data.image,
-        data.is_active
-    ))
-
-    conn.commit()
+    """, (data.name, data.role, data.rating, data.reviews, data.image, data.is_active))
     master_id = cur.lastrowid
+    ensure_master_hours(conn, master_id)
+    conn.commit()
     conn.close()
-
     return {"success": True, "id": master_id}
 
 
 @app.patch("/admin/masters/{master_id}")
-def admin_update_master(
-    master_id: int,
-    data: MasterUpdate,
-    telegram_id: str = Query(...)
-):
+def admin_update_master(master_id: int, data: MasterUpdate, telegram_id: str = Query(...)):
     require_admin(telegram_id)
-
     fields = []
     values = []
-
     mapping = {
         "name": data.name,
         "role": data.role,
@@ -494,28 +646,137 @@ def admin_update_master(
         return {"success": True}
 
     values.append(master_id)
-
     conn = get_conn()
-
-    conn.execute(f"""
-        UPDATE masters
-        SET {", ".join(fields)}
-        WHERE id = ?
-    """, values)
-
+    conn.execute(f"UPDATE masters SET {', '.join(fields)} WHERE id = ?", values)
     conn.commit()
     conn.close()
-
     return {"success": True}
 
 
 @app.delete("/admin/masters/{master_id}")
 def admin_delete_master(master_id: int, telegram_id: str = Query(...)):
     require_admin(telegram_id)
-
     conn = get_conn()
+    conn.execute("DELETE FROM master_hours WHERE master_id = ?", (master_id,))
     conn.execute("DELETE FROM masters WHERE id = ?", (master_id,))
     conn.commit()
     conn.close()
+    return {"success": True}
 
+
+@app.get("/admin/masters/{master_id}/hours")
+def admin_get_master_hours(master_id: int, telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+    conn = get_conn()
+    master = conn.execute("SELECT id FROM masters WHERE id = ?", (master_id,)).fetchone()
+
+    if not master:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Master not found")
+
+    ensure_master_hours(conn, master_id)
+    conn.commit()
+    rows = conn.execute("""
+        SELECT * FROM master_hours
+        WHERE master_id = ?
+        ORDER BY CASE day_label
+            WHEN 'Пн' THEN 1
+            WHEN 'Вт' THEN 2
+            WHEN 'Ср' THEN 3
+            WHEN 'Чт' THEN 4
+            WHEN 'Пт' THEN 5
+            WHEN 'Сб' THEN 6
+            WHEN 'Вс' THEN 7
+            ELSE 8
+        END
+    """, (master_id,)).fetchall()
+    conn.close()
+    return [master_hour_to_dict(row) for row in rows]
+
+
+@app.patch("/admin/masters/{master_id}/hours")
+def admin_update_master_hours(master_id: int, data: MasterHoursUpdate, telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+    conn = get_conn()
+    master = conn.execute("SELECT id FROM masters WHERE id = ?", (master_id,)).fetchone()
+
+    if not master:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Master not found")
+
+    ensure_master_hours(conn, master_id)
+
+    for item in data.hours:
+        if item.day_label not in DEFAULT_DAYS:
+            continue
+
+        conn.execute("""
+            INSERT INTO master_hours (master_id, day_label, start_time, end_time, is_working)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(master_id, day_label) DO UPDATE SET
+                start_time = excluded.start_time,
+                end_time = excluded.end_time,
+                is_working = excluded.is_working
+        """, (
+            master_id,
+            item.day_label,
+            item.start_time,
+            item.end_time,
+            1 if int(item.is_working) == 1 else 0
+        ))
+
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.post("/admin/work-photos")
+def admin_create_work_photo(data: WorkPhotoCreate, telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+    conn = get_conn()
+    cur = conn.execute("""
+        INSERT INTO work_photos (image, title, master, is_active)
+        VALUES (?, ?, ?, ?)
+    """, (data.image, data.title, data.master, data.is_active))
+    conn.commit()
+    photo_id = cur.lastrowid
+    conn.close()
+    return {"success": True, "id": photo_id}
+
+
+@app.patch("/admin/work-photos/{photo_id}")
+def admin_update_work_photo(photo_id: int, data: WorkPhotoUpdate, telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+    fields = []
+    values = []
+    mapping = {
+        "image": data.image,
+        "title": data.title,
+        "master": data.master,
+        "is_active": data.is_active,
+    }
+
+    for key, value in mapping.items():
+        if value is not None:
+            fields.append(f"{key} = ?")
+            values.append(value)
+
+    if not fields:
+        return {"success": True}
+
+    values.append(photo_id)
+    conn = get_conn()
+    conn.execute(f"UPDATE work_photos SET {', '.join(fields)} WHERE id = ?", values)
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.delete("/admin/work-photos/{photo_id}")
+def admin_delete_work_photo(photo_id: int, telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+    conn = get_conn()
+    conn.execute("DELETE FROM work_photos WHERE id = ?", (photo_id,))
+    conn.commit()
+    conn.close()
     return {"success": True}
