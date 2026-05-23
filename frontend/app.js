@@ -14,25 +14,29 @@ const user = tg?.initDataUnsafe?.user || {
 };
 
 let adminMode = "new";
+let adminSection = "bookings";
 
-const services = [
-  { id: 1, name: "Стрижка", desc: "Классическая мужская стрижка с укладкой", duration: 45, price: 120, icon: "✂️", img: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=600&auto=format&fit=crop" },
-  { id: 2, name: "Стрижка + борода", desc: "Стрижка и оформление бороды", duration: 60, price: 160, icon: "🧔", img: "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=600&auto=format&fit=crop" },
-  { id: 3, name: "Королевское бритьё", desc: "Бритьё опасной бритвой + уход", duration: 40, price: 110, icon: "🪒", img: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=600&auto=format&fit=crop" },
-  { id: 4, name: "Детская стрижка", desc: "Стрижка для детей до 12 лет", duration: 30, price: 90, icon: "👦", img: "https://images.unsplash.com/photo-1605497788044-5a32c7078486?q=80&w=600&auto=format&fit=crop" }
+let services = [];
+let masters = [];
+
+const fallbackServices = [
+  { id: 1, name: "Стрижка", desc: "Классическая мужская стрижка с укладкой", duration: 45, price: 120, icon: "✂️", img: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=600&auto=format&fit=crop", is_active: 1 },
+  { id: 2, name: "Стрижка + борода", desc: "Стрижка и оформление бороды", duration: 60, price: 160, icon: "🧔", img: "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=600&auto=format&fit=crop", is_active: 1 },
+  { id: 3, name: "Королевское бритьё", desc: "Бритьё опасной бритвой + уход", duration: 40, price: 110, icon: "🪒", img: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=600&auto=format&fit=crop", is_active: 1 },
+  { id: 4, name: "Детская стрижка", desc: "Стрижка для детей до 12 лет", duration: 30, price: 90, icon: "👦", img: "https://images.unsplash.com/photo-1605497788044-5a32c7078486?q=80&w=600&auto=format&fit=crop", is_active: 1 }
 ];
 
-const masters = [
-  { id: 1, name: "Алексей", role: "Топ-барбер", rating: "4.9", reviews: 243, img: "https://images.unsplash.com/photo-1618077360395-f3068be8e001?q=80&w=300&auto=format&fit=crop" },
-  { id: 2, name: "Дмитрий", role: "Барбер", rating: "4.8", reviews: 165, img: "https://images.unsplash.com/photo-1622286346003-c2e63b378f17?q=80&w=300&auto=format&fit=crop" },
-  { id: 3, name: "Максим", role: "Барбер", rating: "4.9", reviews: 112, img: "https://images.unsplash.com/photo-1590086783191-a0694c7d1e6e?q=80&w=300&auto=format&fit=crop" },
-  { id: 4, name: "Игорь", role: "Барбер", rating: "4.7", reviews: 98, img: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=300&auto=format&fit=crop" }
+const fallbackMasters = [
+  { id: 1, name: "Алексей", role: "Топ-барбер", rating: "4.9", reviews: 243, img: "https://images.unsplash.com/photo-1618077360395-f3068be8e001?q=80&w=300&auto=format&fit=crop", is_active: 1 },
+  { id: 2, name: "Дмитрий", role: "Барбер", rating: "4.8", reviews: 165, img: "https://images.unsplash.com/photo-1622286346003-c2e63b378f17?q=80&w=300&auto=format&fit=crop", is_active: 1 },
+  { id: 3, name: "Максим", role: "Барбер", rating: "4.9", reviews: 112, img: "https://images.unsplash.com/photo-1590086783191-a0694c7d1e6e?q=80&w=300&auto=format&fit=crop", is_active: 1 },
+  { id: 4, name: "Игорь", role: "Барбер", rating: "4.7", reviews: 98, img: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=300&auto=format&fit=crop", is_active: 1 }
 ];
 
 const times = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"];
 
-let selectedService = services[0];
-let selectedMaster = masters[0];
+let selectedService = null;
+let selectedMaster = null;
 let selectedDay = { label: "Ср", date: "22 мая, среда" };
 let selectedTime = "13:00";
 let busyTimes = [];
@@ -44,12 +48,49 @@ function haptic() {
   tg?.HapticFeedback?.impactOccurred("light");
 }
 
+async function api(path, options = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  return await res.json();
+}
+
+async function loadCatalog(includeInactive = false) {
+  try {
+    const servicesData = await api(`/services${includeInactive ? "?include_inactive=1" : ""}`);
+    const mastersData = await api(`/masters${includeInactive ? "?include_inactive=1" : ""}`);
+
+    services = servicesData.length ? servicesData : fallbackServices;
+    masters = mastersData.length ? mastersData : fallbackMasters;
+  } catch (e) {
+    console.error("Catalog load error:", e);
+    services = fallbackServices;
+    masters = fallbackMasters;
+  }
+
+  if (!selectedService || !services.find(s => s.id === selectedService.id)) {
+    selectedService = services.find(s => Number(s.is_active) === 1) || services[0];
+  }
+
+  if (!selectedMaster || !masters.find(m => m.id === selectedMaster.id)) {
+    selectedMaster = masters.find(m => Number(m.is_active) === 1) || masters[0];
+  }
+}
+
 async function isAdminUser() {
   if (adminCache !== null) return adminCache;
 
   try {
-    const res = await fetch(`${API_URL}/me/admin?telegram_id=${encodeURIComponent(user.id)}`);
-    const data = await res.json();
+    const data = await api(`/me/admin?telegram_id=${encodeURIComponent(user.id)}`);
     adminCache = data.is_admin === true;
     return adminCache;
   } catch (e) {
@@ -74,6 +115,7 @@ async function nav(active = "home") {
 
 async function home() {
   haptic();
+  await loadCatalog(false);
 
   app.innerHTML = `
     <div class="screen">
@@ -87,7 +129,6 @@ async function home() {
 
       <div class="hero-title">PREMIUM CUT.<br>REAL EXPERIENCE.</div>
       <p class="muted">Твой стиль. Наше ремесло.</p>
-      <p class="muted">Твой ID: ${user.id}</p>
 
       <button class="gold-btn" onclick="servicesScreen()">▣ Записаться</button>
 
@@ -96,9 +137,9 @@ async function home() {
         <span onclick="servicesScreen()">Смотреть все</span>
       </div>
 
-      ${services.map(s => `
+      ${services.filter(s => Number(s.is_active) === 1).map(s => `
         <div class="card" onclick="selectService(${s.id})">
-          <div class="icon">${s.icon}</div>
+          <div class="icon">${s.icon || "✂️"}</div>
           <div>
             <h3>${s.name}</h3>
             <p>${s.duration} мин · <span class="price">от ${s.price} zł</span></p>
@@ -113,6 +154,9 @@ async function home() {
 
 async function servicesScreen() {
   haptic();
+  await loadCatalog(false);
+
+  const activeServices = services.filter(s => Number(s.is_active) === 1);
 
   app.innerHTML = `
     <div class="screen">
@@ -121,15 +165,15 @@ async function servicesScreen() {
         <h2>Выбор услуги</h2>
       </div>
 
-      ${services.map(s => `
-        <div class="card ${selectedService.id === s.id ? "active" : ""}" onclick="selectService(${s.id})">
-          <div class="card-img" style="background-image:url('${s.img}')"></div>
+      ${activeServices.map(s => `
+        <div class="card ${selectedService?.id === s.id ? "active" : ""}" onclick="selectService(${s.id})">
+          <div class="card-img" style="background-image:url('${s.img || s.image || ""}')"></div>
           <div>
             <h3>${s.name}</h3>
-            <p>${s.desc}</p>
+            <p>${s.desc || s.description || ""}</p>
             <p>${s.duration} мин · <span class="price">от ${s.price} zł</span></p>
           </div>
-          <div class="radio">${selectedService.id === s.id ? "✓" : ""}</div>
+          <div class="radio">${selectedService?.id === s.id ? "✓" : ""}</div>
         </div>
       `).join("")}
 
@@ -140,12 +184,15 @@ async function servicesScreen() {
 }
 
 function selectService(id) {
-  selectedService = services.find(s => s.id === id);
+  selectedService = services.find(s => Number(s.id) === Number(id));
   servicesScreen();
 }
 
 async function mastersScreen() {
   haptic();
+  await loadCatalog(false);
+
+  const activeMasters = masters.filter(m => Number(m.is_active) === 1);
 
   app.innerHTML = `
     <div class="screen">
@@ -154,15 +201,15 @@ async function mastersScreen() {
         <h2>Выбор мастера</h2>
       </div>
 
-      ${masters.map(m => `
-        <div class="card ${selectedMaster.id === m.id ? "active" : ""}" onclick="selectMaster(${m.id})">
-          <div class="master-avatar" style="background-image:url('${m.img}')"></div>
+      ${activeMasters.map(m => `
+        <div class="card ${selectedMaster?.id === m.id ? "active" : ""}" onclick="selectMaster(${m.id})">
+          <div class="master-avatar" style="background-image:url('${m.img || m.image || ""}')"></div>
           <div>
             <h3>${m.name}</h3>
             <p>${m.role}</p>
             <p><span class="price">★ ${m.rating}</span> (${m.reviews})</p>
           </div>
-          <div class="radio">${selectedMaster.id === m.id ? "✓" : ""}</div>
+          <div class="radio">${selectedMaster?.id === m.id ? "✓" : ""}</div>
         </div>
       `).join("")}
 
@@ -173,15 +220,14 @@ async function mastersScreen() {
 }
 
 function selectMaster(id) {
-  selectedMaster = masters.find(m => m.id === id);
+  selectedMaster = masters.find(m => Number(m.id) === Number(id));
   mastersScreen();
 }
 
 async function loadBusySlots() {
   try {
-    const url = `${API_URL}/slots/busy?master=${encodeURIComponent(selectedMaster.name)}&date=${encodeURIComponent(selectedDay.date)}`;
-    const res = await fetch(url);
-    busyTimes = await res.json();
+    const url = `/slots/busy?master=${encodeURIComponent(selectedMaster.name)}&date=${encodeURIComponent(selectedDay.date)}`;
+    busyTimes = await api(url);
 
     if (busyTimes.includes(selectedTime)) {
       selectedTime = times.find(t => !busyTimes.includes(t)) || "";
@@ -193,6 +239,11 @@ async function loadBusySlots() {
 
 async function timeScreen() {
   haptic();
+
+  if (!selectedService || !selectedMaster) {
+    await loadCatalog(false);
+  }
+
   await loadBusySlots();
 
   const days = [
@@ -322,8 +373,7 @@ async function myBookings() {
   `;
 
   try {
-    const res = await fetch(`${API_URL}/bookings/${user.id}`);
-    const bookings = await res.json();
+    const bookings = await api(`/bookings/${user.id}`);
 
     app.innerHTML = `
       <div class="screen">
@@ -373,18 +423,32 @@ async function admin() {
     </div>
   `;
 
+  if (adminSection === "services") {
+    await adminServices();
+    return;
+  }
+
+  if (adminSection === "masters") {
+    await adminMasters();
+    return;
+  }
+
+  await adminBookings();
+}
+
+function adminMainTabs() {
+  return `
+    <div class="admin-tabs three-tabs">
+      <button class="${adminSection === "bookings" ? "tab active" : "tab"}" onclick="setAdminSection('bookings')">Записи</button>
+      <button class="${adminSection === "services" ? "tab active" : "tab"}" onclick="setAdminSection('services')">Услуги</button>
+      <button class="${adminSection === "masters" ? "tab active" : "tab"}" onclick="setAdminSection('masters')">Мастера</button>
+    </div>
+  `;
+}
+
+async function adminBookings() {
   try {
-    const res = await fetch(`${API_URL}/admin/bookings?telegram_id=${encodeURIComponent(user.id)}`);
-
-    if (res.status === 403) {
-      alert("Нет доступа к админке.");
-      await home();
-      return;
-    }
-
-    if (!res.ok) throw new Error();
-
-    const allBookings = await res.json();
+    const allBookings = await api(`/admin/bookings?telegram_id=${encodeURIComponent(user.id)}`);
 
     const newBookings = allBookings.filter(b => b.status === "Новая");
     const confirmedBookings = allBookings.filter(b => b.status === "Подтверждена");
@@ -407,6 +471,8 @@ async function admin() {
           <div class="back" onclick="home()">←</div>
           <h2>Админ-панель</h2>
         </div>
+
+        ${adminMainTabs()}
 
         <div class="admin-grid">
           <div class="stat"><strong>${newBookings.length}</strong><span>Новые</span></div>
@@ -461,6 +527,85 @@ async function admin() {
   }
 }
 
+async function adminServices() {
+  await loadCatalog(true);
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="header">
+        <div class="back" onclick="home()">←</div>
+        <h2>Услуги</h2>
+      </div>
+
+      ${adminMainTabs()}
+
+      <button class="gold-btn" onclick="createService()">+ Добавить услугу</button>
+
+      ${services.map(s => `
+        <div class="card admin-edit-card">
+          <div class="card-img" style="background-image:url('${s.img || s.image || ""}')"></div>
+          <div>
+            <h3>${s.name}</h3>
+            <p>${s.desc || s.description || ""}</p>
+            <p>${s.duration} мин · <span class="price">${s.price} zł</span></p>
+            <p>${Number(s.is_active) === 1 ? "🟢 Активна" : "🔴 Скрыта"}</p>
+
+            <button class="small-btn" onclick="editService(${s.id})">Редактировать</button>
+            <button class="small-btn" onclick="toggleService(${s.id}, ${Number(s.is_active) === 1 ? 0 : 1})">
+              ${Number(s.is_active) === 1 ? "Скрыть" : "Показать"}
+            </button>
+            <button class="small-btn danger" onclick="deleteService(${s.id})">Удалить</button>
+          </div>
+        </div>
+      `).join("")}
+
+      ${await nav("admin")}
+    </div>
+  `;
+}
+
+async function adminMasters() {
+  await loadCatalog(true);
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="header">
+        <div class="back" onclick="home()">←</div>
+        <h2>Мастера</h2>
+      </div>
+
+      ${adminMainTabs()}
+
+      <button class="gold-btn" onclick="createMaster()">+ Добавить мастера</button>
+
+      ${masters.map(m => `
+        <div class="card admin-edit-card">
+          <div class="master-avatar" style="background-image:url('${m.img || m.image || ""}')"></div>
+          <div>
+            <h3>${m.name}</h3>
+            <p>${m.role}</p>
+            <p><span class="price">★ ${m.rating}</span> (${m.reviews})</p>
+            <p>${Number(m.is_active) === 1 ? "🟢 Активен" : "🔴 Скрыт"}</p>
+
+            <button class="small-btn" onclick="editMaster(${m.id})">Редактировать</button>
+            <button class="small-btn" onclick="toggleMaster(${m.id}, ${Number(m.is_active) === 1 ? 0 : 1})">
+              ${Number(m.is_active) === 1 ? "Скрыть" : "Показать"}
+            </button>
+            <button class="small-btn danger" onclick="deleteMaster(${m.id})">Удалить</button>
+          </div>
+        </div>
+      `).join("")}
+
+      ${await nav("admin")}
+    </div>
+  `;
+}
+
+function setAdminSection(section) {
+  adminSection = section;
+  admin();
+}
+
 function setAdminMode(mode) {
   adminMode = mode;
   admin();
@@ -470,17 +615,196 @@ async function setStatus(id, status) {
   haptic();
 
   try {
-    const res = await fetch(`${API_URL}/admin/bookings/${id}/status?telegram_id=${encodeURIComponent(user.id)}`, {
+    await api(`/admin/bookings/${id}/status?telegram_id=${encodeURIComponent(user.id)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status })
     });
-
-    if (!res.ok) throw new Error();
 
     admin();
   } catch {
     alert("Не удалось изменить статус.");
+  }
+}
+
+async function createService() {
+  const name = prompt("Название услуги:");
+  if (!name) return;
+
+  const description = prompt("Описание услуги:", "");
+  const duration = Number(prompt("Длительность в минутах:", "45"));
+  const price = Number(prompt("Цена в zł:", "120"));
+  const icon = prompt("Иконка/эмодзи:", "✂️");
+  const image = prompt("Ссылка на фото:", "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=600&auto=format&fit=crop");
+
+  try {
+    await api(`/admin/services?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        description,
+        duration,
+        price,
+        icon,
+        image,
+        is_active: 1
+      })
+    });
+
+    services = [];
+    await adminServices();
+  } catch {
+    alert("Не удалось добавить услугу.");
+  }
+}
+
+async function editService(id) {
+  const s = services.find(item => Number(item.id) === Number(id));
+  if (!s) return;
+
+  const name = prompt("Название услуги:", s.name);
+  if (!name) return;
+
+  const description = prompt("Описание:", s.desc || s.description || "");
+  const duration = Number(prompt("Длительность:", s.duration));
+  const price = Number(prompt("Цена:", s.price));
+  const icon = prompt("Иконка:", s.icon || "✂️");
+  const image = prompt("Ссылка на фото:", s.img || s.image || "");
+
+  try {
+    await api(`/admin/services/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name,
+        description,
+        duration,
+        price,
+        icon,
+        image
+      })
+    });
+
+    services = [];
+    await adminServices();
+  } catch {
+    alert("Не удалось изменить услугу.");
+  }
+}
+
+async function toggleService(id, value) {
+  try {
+    await api(`/admin/services/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: value })
+    });
+
+    services = [];
+    await adminServices();
+  } catch {
+    alert("Не удалось изменить видимость услуги.");
+  }
+}
+
+async function deleteService(id) {
+  if (!confirm("Удалить услугу?")) return;
+
+  try {
+    await api(`/admin/services/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "DELETE"
+    });
+
+    services = [];
+    await adminServices();
+  } catch {
+    alert("Не удалось удалить услугу.");
+  }
+}
+
+async function createMaster() {
+  const name = prompt("Имя мастера:");
+  if (!name) return;
+
+  const role = prompt("Роль/специализация:", "Барбер");
+  const rating = prompt("Рейтинг:", "5.0");
+  const reviews = Number(prompt("Количество отзывов:", "0"));
+  const image = prompt("Ссылка на фото:", "https://images.unsplash.com/photo-1618077360395-f3068be8e001?q=80&w=300&auto=format&fit=crop");
+
+  try {
+    await api(`/admin/masters?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        role,
+        rating,
+        reviews,
+        image,
+        is_active: 1
+      })
+    });
+
+    masters = [];
+    await adminMasters();
+  } catch {
+    alert("Не удалось добавить мастера.");
+  }
+}
+
+async function editMaster(id) {
+  const m = masters.find(item => Number(item.id) === Number(id));
+  if (!m) return;
+
+  const name = prompt("Имя мастера:", m.name);
+  if (!name) return;
+
+  const role = prompt("Роль/специализация:", m.role || "");
+  const rating = prompt("Рейтинг:", m.rating || "5.0");
+  const reviews = Number(prompt("Количество отзывов:", m.reviews || 0));
+  const image = prompt("Ссылка на фото:", m.img || m.image || "");
+
+  try {
+    await api(`/admin/masters/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name,
+        role,
+        rating,
+        reviews,
+        image
+      })
+    });
+
+    masters = [];
+    await adminMasters();
+  } catch {
+    alert("Не удалось изменить мастера.");
+  }
+}
+
+async function toggleMaster(id, value) {
+  try {
+    await api(`/admin/masters/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: value })
+    });
+
+    masters = [];
+    await adminMasters();
+  } catch {
+    alert("Не удалось изменить видимость мастера.");
+  }
+}
+
+async function deleteMaster(id) {
+  if (!confirm("Удалить мастера?")) return;
+
+  try {
+    await api(`/admin/masters/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "DELETE"
+    });
+
+    masters = [];
+    await adminMasters();
+  } catch {
+    alert("Не удалось удалить мастера.");
   }
 }
 
