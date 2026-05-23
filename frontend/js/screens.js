@@ -67,11 +67,11 @@ function isSelectedMasterDayOff() {
 
 async function home() {
   haptic();
-  ensureSelectedDay();
   await loadCatalog(false);
   await loadWorkPhotos(false);
 
   const visiblePhotos = workPhotos.filter(p => Number(p.is_active) === 1).slice(0, 6);
+  const activeServices = services.filter(s => Number(s.is_active) === 1);
 
   app.innerHTML = `
     <div class="screen">
@@ -82,6 +82,7 @@ async function home() {
       </div>
 
       <div class="hero-img"></div>
+
       <div class="hero-title">REAL EXPERIENCE.</div>
       <p class="muted hero-subtitle">Твой стиль. Наше ремесло.</p>
 
@@ -92,11 +93,12 @@ async function home() {
         <span onclick="servicesScreen()">Смотреть все</span>
       </div>
 
-      ${services.filter(s => Number(s.is_active) === 1).map(s => `
+      ${activeServices.slice(0, 4).map(s => `
         <div class="card lift-card" onclick="selectService(${s.id})">
-          <div class="icon">${s.icon || "✂️"}</div>
+          <div class="card-img" style="background-image:url('${s.img || s.image || ""}')"></div>
           <div>
             <h3>${s.name}</h3>
+            <p>${s.desc || s.description || ""}</p>
             <p>${s.duration} мин · <span class="price">от ${s.price} zł</span></p>
           </div>
         </div>
@@ -266,17 +268,22 @@ async function timeScreen() {
 
       ${isReschedule ? `<p class="muted">Выбери новое время для записи: ${rescheduleBooking.service}</p>` : ""}
 
-      <div class="days wide-days">
-        ${days.map(d => {
-          const shopClosed = shopClosedDays.some(item => item.date === d.date);
-          const masterIsOff = masterDayOffs.some(item => item.date === d.date);
-          return `
-            <div class="day ${selectedDay.date === d.date ? "active" : ""} ${shopClosed || masterIsOff ? "closed" : ""}" onclick="selectDay('${d.label}','${d.date}','${d.day}','${d.month}')">
-              <span>${d.label}</span>${d.day}<small>${d.month}</small>
-            </div>
-          `;
-        }).join("")}
+      <div class="calendar-panel">
+  <button class="calendar-arrow" onclick="prevCalendarPage()" ${calendarOffset === 0 ? "disabled" : ""}>←</button>
+
+  <div class="days">
+    ${generateBookingDays().map(d => `
+      <div class="day ${selectedDay.date === d.full ? "active" : ""} ${d.isPast ? "disabled" : ""}"
+        onclick="${d.isPast ? "" : `selectDay('${d.label}', '${d.full}', '${d.raw}')`}">
+        <span>${d.label}</span>
+        ${d.number}
+        <small>${d.month}</small>
       </div>
+    `).join("")}
+  </div>
+
+  <button class="calendar-arrow" onclick="nextCalendarPage()">→</button>
+</div>
 
       <div class="work-hours-note">
         ${closed ? "Заведение закрыто в этот день" : masterOff ? "У мастера выходной в этот день" : Number(masterHours?.is_working) === 1 ? `Рабочее время мастера: ${masterHours.start_time}–${masterHours.end_time}` : "В этот день мастер не работает"}
@@ -312,8 +319,13 @@ async function timeScreen() {
   `;
 }
 
-function selectDay(label, date, day, month) {
-  selectedDay = { label, date, day, month, display: formatDisplayDate(date) };
+function selectDay(label, date, raw = "") {
+  if (raw && isPastDate(raw)) {
+    alert("Нельзя записаться на прошедшую дату.");
+    return;
+  }
+
+  selectedDay = { label, date, raw };
   masterHours = null;
   timeScreen();
 }

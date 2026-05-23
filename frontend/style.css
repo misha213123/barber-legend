@@ -806,3 +806,46 @@ button,
 }
 
 
+.hero-subtitle {
+  text-align: center;
+  font-size: 17px;
+}
+
+.calendar-panel {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.calendar-panel .days {
+  margin-bottom: 0;
+}
+
+.calendar-arrow {
+  height: 56px;
+  border: 1px solid rgba(215, 173, 85, .28);
+  border-radius: 14px;
+  background: rgba(215, 173, 85, .08);
+  color: #d7ad55;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.calendar-arrow:disabled {
+  opacity: .25;
+  pointer-events: none;
+}
+
+.day small {
+  display: block;
+  font-size: 11px;
+  margin-top: 2px;
+  opacity: .75;
+}
+
+.day.disabled {
+  opacity: .32;
+  pointer-events: none;
+}
