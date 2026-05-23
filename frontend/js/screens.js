@@ -1,13 +1,47 @@
-function getBookingDays() {
-  return [
-    ["Пн", "20", "20 мая, понедельник"],
-    ["Вт", "21", "21 мая, вторник"],
-    ["Ср", "22", "22 мая, среда"],
-    ["Чт", "23", "23 мая, четверг"],
-    ["Пт", "24", "24 мая, пятница"],
-    ["Сб", "25", "25 мая, суббота"],
-    ["Вс", "26", "26 мая, воскресенье"]
-  ];
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function toISODate(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function formatDisplayDate(iso) {
+  const date = new Date(`${iso}T12:00:00`);
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", weekday: "long" });
+}
+
+function getDayLabelFromDate(date) {
+  return ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][date.getDay()];
+}
+
+function getBookingDays(count = 30) {
+  const result = [];
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  for (let i = 0; i < count; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const iso = toISODate(d);
+
+    result.push({
+      label: getDayLabelFromDate(d),
+      day: String(d.getDate()),
+      month: d.toLocaleDateString("ru-RU", { month: "short" }).replace(".", ""),
+      date: iso,
+      display: formatDisplayDate(iso)
+    });
+  }
+
+  return result;
+}
+
+function ensureSelectedDay() {
+  const days = getBookingDays();
+  if (!selectedDay || !days.find(d => d.date === selectedDay.date)) {
+    selectedDay = days[0];
+  }
 }
 
 function timeToMinutes(value) {
@@ -23,8 +57,17 @@ function isTimeInsideWorkingHours(time) {
   return current >= start && current <= end;
 }
 
+function isSelectedShopClosed() {
+  return shopClosedDays.some(item => item.date === selectedDay?.date);
+}
+
+function isSelectedMasterDayOff() {
+  return masterDayOffs.some(item => item.date === selectedDay?.date);
+}
+
 async function home() {
   haptic();
+  ensureSelectedDay();
   await loadCatalog(false);
   await loadWorkPhotos(false);
 
@@ -39,8 +82,8 @@ async function home() {
       </div>
 
       <div class="hero-img"></div>
-      <div class="hero-title">PREMIUM CUT.<br>REAL EXPERIENCE.</div>
-      <p class="muted">Твой стиль. Наше ремесло.</p>
+      <div class="hero-title">REAL EXPERIENCE.</div>
+      <p class="muted hero-subtitle">Твой стиль. Наше ремесло.</p>
 
       <button class="gold-btn pulse" onclick="servicesScreen()">▣ Записаться</button>
 
@@ -79,6 +122,7 @@ async function home() {
 
 async function servicesScreen() {
   haptic();
+  ensureSelectedDay();
   await loadCatalog(false);
 
   const activeServices = services.filter(s => Number(s.is_active) === 1);
@@ -166,7 +210,30 @@ async function loadMasterHours() {
   }
 }
 
+async function loadClosedDaysForCalendar() {
+  const days = getBookingDays(30);
+  const start = days[0].date;
+  const end = days[days.length - 1].date;
+
+  try {
+    shopClosedDays = await api(`/shop-closed-days?start_date=${start}&end_date=${end}`);
+  } catch {
+    shopClosedDays = [];
+  }
+
+  try {
+    masterDayOffs = await api(`/master-day-offs?master=${encodeURIComponent(selectedMaster.name)}&start_date=${start}&end_date=${end}`);
+  } catch {
+    masterDayOffs = [];
+  }
+}
+
 function normalizeSelectedTime() {
+  if (isSelectedShopClosed() || isSelectedMasterDayOff()) {
+    selectedTime = "";
+    return;
+  }
+
   if (!selectedTime || busyTimes.includes(selectedTime) || !isTimeInsideWorkingHours(selectedTime)) {
     selectedTime = times.find(t => !busyTimes.includes(t) && isTimeInsideWorkingHours(t)) || "";
   }
@@ -174,17 +241,21 @@ function normalizeSelectedTime() {
 
 async function timeScreen() {
   haptic();
+  ensureSelectedDay();
 
   if (!selectedService || !selectedMaster) {
     await loadCatalog(false);
   }
 
+  await loadClosedDaysForCalendar();
   await loadBusySlots();
   await loadMasterHours();
   normalizeSelectedTime();
 
-  const days = getBookingDays();
+  const days = getBookingDays(30);
   const isReschedule = Boolean(rescheduleBookingId);
+  const closed = isSelectedShopClosed();
+  const masterOff = isSelectedMasterDayOff();
 
   app.innerHTML = `
     <div class="screen">
@@ -195,27 +266,30 @@ async function timeScreen() {
 
       ${isReschedule ? `<p class="muted">Выбери новое время для записи: ${rescheduleBooking.service}</p>` : ""}
 
-      <div class="days">
-        ${days.map(d => `
-          <div class="day ${selectedDay.date === d[2] ? "active" : ""}" onclick="selectDay('${d[0]}','${d[2]}')">
-            <span>${d[0]}</span>${d[1]}
-          </div>
-        `).join("")}
+      <div class="days wide-days">
+        ${days.map(d => {
+          const shopClosed = shopClosedDays.some(item => item.date === d.date);
+          const masterIsOff = masterDayOffs.some(item => item.date === d.date);
+          return `
+            <div class="day ${selectedDay.date === d.date ? "active" : ""} ${shopClosed || masterIsOff ? "closed" : ""}" onclick="selectDay('${d.label}','${d.date}','${d.day}','${d.month}')">
+              <span>${d.label}</span>${d.day}<small>${d.month}</small>
+            </div>
+          `;
+        }).join("")}
       </div>
 
       <div class="work-hours-note">
-        ${Number(masterHours?.is_working) === 1
-          ? `Рабочее время мастера: ${masterHours.start_time}–${masterHours.end_time}`
-          : "В этот день мастер не работает"}
+        ${closed ? "Заведение закрыто в этот день" : masterOff ? "У мастера выходной в этот день" : Number(masterHours?.is_working) === 1 ? `Рабочее время мастера: ${masterHours.start_time}–${masterHours.end_time}` : "В этот день мастер не работает"}
       </div>
 
       <div class="time-grid">
         ${times.map(t => {
           const busy = busyTimes.includes(t);
           const outside = !isTimeInsideWorkingHours(t);
+          const disabled = busy || outside || closed || masterOff;
           return `
-            <button class="time ${selectedTime === t ? "active" : ""} ${busy ? "busy" : ""} ${outside ? "busy" : ""}" onclick="${busy || outside ? "" : `selectTime('${t}')`}">
-              ${busy ? "Занято" : outside ? "—" : t}
+            <button class="time ${selectedTime === t ? "active" : ""} ${disabled ? "busy" : ""}" onclick="${disabled ? "" : `selectTime('${t}')`}">
+              ${busy ? "Занято" : outside || closed || masterOff ? "—" : t}
             </button>
           `;
         }).join("")}
@@ -225,7 +299,7 @@ async function timeScreen() {
         <h3>Детали записи</h3>
         <div class="details-row"><span class="muted">Услуга</span><span>${selectedService.name}</span></div>
         <div class="details-row"><span class="muted">Мастер</span><span>${selectedMaster.name}</span></div>
-        <div class="details-row"><span class="muted">Дата</span><span>${selectedDay.date}</span></div>
+        <div class="details-row"><span class="muted">Дата</span><span>${formatDisplayDate(selectedDay.date)}</span></div>
         <div class="details-row"><span class="muted">Время</span><span>${selectedTime || "Нет времени"}</span></div>
         <div class="details-row total"><span>Итого</span><span>${selectedService.price} zł</span></div>
       </div>
@@ -238,8 +312,8 @@ async function timeScreen() {
   `;
 }
 
-function selectDay(label, date) {
-  selectedDay = { label, date };
+function selectDay(label, date, day, month) {
+  selectedDay = { label, date, day, month, display: formatDisplayDate(date) };
   masterHours = null;
   timeScreen();
 }
@@ -265,7 +339,7 @@ async function confirmBooking() {
     master: selectedMaster.name,
     date: selectedDay.date,
     time: selectedTime,
-    price: selectedService.price
+    price: Number(selectedService.price || 0)
   };
 
   try {
@@ -275,8 +349,9 @@ async function confirmBooking() {
       body: JSON.stringify(payload)
     });
 
-    if (res.status === 409) {
-      alert("Это время уже занято. Выбери другое.");
+    if (res.status === 409 || res.status === 400) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.detail || "Это время недоступно. Выбери другое.");
       timeScreen();
       return;
     }
@@ -288,7 +363,7 @@ async function confirmBooking() {
         <div class="check">✓</div>
         <h2>Запись создана</h2>
         <p class="muted">${selectedService.name}</p>
-        <p>${selectedDay.date} в ${selectedTime}</p>
+        <p>${formatDisplayDate(selectedDay.date)} в ${selectedTime}</p>
         <button class="gold-btn" onclick="home()">На главную</button>
         ${await nav("booking")}
       </div>
@@ -305,10 +380,7 @@ async function myBookings() {
 
   app.innerHTML = `
     <div class="screen">
-      <div class="header">
-        <div class="back" onclick="home()">←</div>
-        <h2>Мои записи</h2>
-      </div>
+      <div class="header"><div class="back" onclick="home()">←</div><h2>Мои записи</h2></div>
       <p class="muted">Загрузка...</p>
       ${await nav("my")}
     </div>
@@ -319,20 +391,18 @@ async function myBookings() {
 
     app.innerHTML = `
       <div class="screen">
-        <div class="header">
-          <div class="back" onclick="home()">←</div>
-          <h2>Мои записи</h2>
-        </div>
+        <div class="header"><div class="back" onclick="home()">←</div><h2>Мои записи</h2></div>
 
         ${bookings.length ? bookings.map(b => {
           const canChange = b.status !== "Выполнена" && b.status !== "Отменена";
+          const dateText = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? formatDisplayDate(b.date) : b.date;
           return `
             <div class="card lift-card">
               <div class="icon">▣</div>
               <div>
                 <h3>${b.service}</h3>
                 <p>${b.master}</p>
-                <p>${b.date} · ${b.time}</p>
+                <p>${dateText} · ${b.time}</p>
                 <p class="price">${b.price} zł · ${b.status}</p>
                 ${canChange ? `
                   <button class="small-btn" onclick="startReschedule(${b.id})">Перезаписаться</button>
@@ -356,9 +426,7 @@ async function cancelBooking(id) {
   if (!confirm("Отменить эту запись?")) return;
 
   try {
-    await api(`/bookings/${id}/cancel?telegram_id=${encodeURIComponent(user.id)}`, {
-      method: "PATCH"
-    });
+    await api(`/bookings/${id}/cancel?telegram_id=${encodeURIComponent(user.id)}`, { method: "PATCH" });
     await myBookings();
   } catch {
     alert("Не удалось отменить запись.");
@@ -375,27 +443,12 @@ async function startReschedule(id) {
 
     await loadCatalog(false);
 
-    selectedService = services.find(s => s.name === booking.service) || {
-      id: 0,
-      name: booking.service,
-      price: booking.price,
-      duration: 30,
-      is_active: 1
-    };
+    selectedService = services.find(s => s.name === booking.service) || { id: 0, name: booking.service, price: booking.price, duration: 30, is_active: 1 };
+    selectedMaster = masters.find(m => m.name === booking.master) || { id: 0, name: booking.master, role: "Мастер", rating: "5.0", reviews: 0, is_active: 1 };
 
-    selectedMaster = masters.find(m => m.name === booking.master) || {
-      id: 0,
-      name: booking.master,
-      role: "Мастер",
-      rating: "5.0",
-      reviews: 0,
-      is_active: 1
-    };
-
-    selectedDay = getBookingDays().find(d => d[2] === booking.date)
-      ? { label: getBookingDays().find(d => d[2] === booking.date)[0], date: booking.date }
-      : { label: "Ср", date: "22 мая, среда" };
-
+    const days = getBookingDays();
+    const foundDay = days.find(d => d.date === booking.date);
+    selectedDay = foundDay || days[0];
     selectedTime = booking.time;
     rescheduleBookingId = id;
     rescheduleBooking = booking;
@@ -425,12 +478,12 @@ async function confirmReschedule() {
       <div class="screen success">
         <div class="check">✓</div>
         <h2>Запись перенесена</h2>
-        <p>${selectedDay.date} в ${selectedTime}</p>
+        <p>${formatDisplayDate(selectedDay.date)} в ${selectedTime}</p>
         <button class="gold-btn" onclick="myBookings()">Мои записи</button>
         ${await nav("my")}
       </div>
     `;
   } catch {
-    alert("Не удалось перенести запись. Возможно, время уже занято.");
+    alert("Не удалось перенести запись. Возможно, время недоступно.");
   }
 }
