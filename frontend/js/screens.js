@@ -74,7 +74,7 @@ async function home() {
   const activeServices = services.filter(s => Number(s.is_active) === 1);
 
   app.innerHTML = `
-    <div class="screen">
+    <div class="screen home-screen">
       <div class="top">
         <div>☰</div>
         <div class="logo">LEGEND<span>BARBERSHOP</span></div>
@@ -83,10 +83,11 @@ async function home() {
 
       <div class="hero-img"></div>
 
-      <div class="hero-title">REAL EXPERIENCE.</div>
-      <p class="muted hero-subtitle">Твой стиль. Наше ремесло.</p>
-
-      <button class="gold-btn pulse" onclick="servicesScreen()">▣ Записаться</button>
+      <div class="hero-content">
+        <div class="hero-title">PREMIUM CUT.<br>REAL EXPERIENCE.</div>
+        <p class="muted hero-subtitle">Твой стиль. Наше ремесло.</p>
+        <button class="gold-btn pulse" onclick="servicesScreen()">▣ Записаться</button>
+      </div>
 
       <div class="row-title">
         <h2>Наши услуги</h2>
@@ -268,22 +269,16 @@ async function timeScreen() {
 
       ${isReschedule ? `<p class="muted">Выбери новое время для записи: ${rescheduleBooking.service}</p>` : ""}
 
-      <div class="calendar-panel">
-  <button class="calendar-arrow" onclick="prevCalendarPage()" ${calendarOffset === 0 ? "disabled" : ""}>←</button>
-
-  <div class="days">
-    ${generateBookingDays().map(d => `
-      <div class="day ${selectedDay.date === d.full ? "active" : ""} ${d.isPast ? "disabled" : ""}"
-        onclick="${d.isPast ? "" : `selectDay('${d.label}', '${d.full}', '${d.raw}')`}">
-        <span>${d.label}</span>
-        ${d.number}
-        <small>${d.month}</small>
+      <div class="days-scroll">
+        ${days.map(d => `
+          <div class="day ${selectedDay.date === d.date ? "active" : ""}"
+            onclick="selectDay('${d.label}', '${d.date}')">
+            <span>${d.label}</span>
+            ${d.day}
+            <small>${d.month}</small>
+          </div>
+        `).join("")}
       </div>
-    `).join("")}
-  </div>
-
-  <button class="calendar-arrow" onclick="nextCalendarPage()">→</button>
-</div>
 
       <div class="work-hours-note">
         ${closed ? "Заведение закрыто в этот день" : masterOff ? "У мастера выходной в этот день" : Number(masterHours?.is_working) === 1 ? `Рабочее время мастера: ${masterHours.start_time}–${masterHours.end_time}` : "В этот день мастер не работает"}
@@ -319,14 +314,18 @@ async function timeScreen() {
   `;
 }
 
-function selectDay(label, date, raw = "") {
-  if (raw && isPastDate(raw)) {
-    alert("Нельзя записаться на прошедшую дату.");
+function selectDay(label, date) {
+  const days = getBookingDays(30);
+  const found = days.find(d => d.date === date);
+
+  if (!found) {
+    alert("Эта дата недоступна.");
     return;
   }
 
-  selectedDay = { label, date, raw };
+  selectedDay = found;
   masterHours = null;
+  selectedTime = "";
   timeScreen();
 }
 

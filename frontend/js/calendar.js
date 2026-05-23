@@ -1,5 +1,4 @@
-let calendarOffset = 0;
-const CALENDAR_PAGE_DAYS = 5;
+const CALENDAR_DAYS_COUNT = 30;
 
 function formatDateLabel(date) {
   const days = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -14,10 +13,6 @@ function formatDateFull(date) {
   });
 }
 
-function formatDateNumber(date) {
-  return date.getDate();
-}
-
 function formatDateMonth(date) {
   return date.toLocaleDateString("ru-RU", {
     month: "short"
@@ -27,32 +22,24 @@ function formatDateMonth(date) {
 function generateBookingDays() {
   const days = [];
 
-  for (let i = 0; i < CALENDAR_PAGE_DAYS; i++) {
+  for (let i = 0; i < CALENDAR_DAYS_COUNT; i++) {
     const date = new Date();
     date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() + calendarOffset + i);
+    date.setDate(date.getDate() + i);
+
+    const raw = date.toISOString().split("T")[0];
 
     days.push({
       label: formatDateLabel(date),
-      number: formatDateNumber(date),
+      number: date.getDate(),
       month: formatDateMonth(date),
       full: formatDateFull(date),
-      raw: date.toISOString().split("T")[0],
-      isPast: isPastDate(date.toISOString().split("T")[0])
+      raw,
+      isPast: false
     });
   }
 
   return days;
-}
-
-function nextCalendarPage() {
-  calendarOffset += CALENDAR_PAGE_DAYS;
-  timeScreen();
-}
-
-function prevCalendarPage() {
-  calendarOffset = Math.max(0, calendarOffset - CALENDAR_PAGE_DAYS);
-  timeScreen();
 }
 
 function isPastDate(rawDate) {

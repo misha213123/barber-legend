@@ -849,3 +849,56 @@ button,
   opacity: .32;
   pointer-events: none;
 }
+
+.home-screen .hero-img {
+  height: 300px;
+  margin: 20px -20px 0;
+}
+
+.hero-content {
+  margin-top: -54px;
+  position: relative;
+  z-index: 2;
+}
+
+.hero-title {
+  text-align: left;
+  max-width: none;
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.22;
+  font-weight: 900;
+  letter-spacing: .8px;
+}
+
+.hero-subtitle {
+  text-align: left;
+  font-size: 17px;
+  margin-top: 22px;
+}
+
+.days-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 0 14px;
+  margin-bottom: 14px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.days-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.days-scroll .day {
+  min-width: 72px;
+  scroll-snap-align: start;
+}
+
+.day small {
+  display: block;
+  font-size: 11px;
+  margin-top: 2px;
+  opacity: .75;
+}
