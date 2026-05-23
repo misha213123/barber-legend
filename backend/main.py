@@ -1175,7 +1175,7 @@ def admin_delete_work_photo(photo_id: int, telegram_id: str = Query(...)):
     return {"success": True}
 
 
-from features_reviews_stats import register_reviews_stats_features
+from backend.features_reviews_stats import register_reviews_stats_features
 
 register_reviews_stats_features(
     app=app,
