@@ -455,3 +455,31 @@ body {
   opacity: 0.4;
   pointer-events: none;
 }
+
+
+.admin-tabs.three-tabs {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.admin-tabs.four-tabs {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.small-btn.danger {
+  background: #3a1515;
+  color: #ffb3b3;
+}
+
+.admin-edit-card {
+  align-items: flex-start;
+}
+
+.time.busy {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.gold-btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
