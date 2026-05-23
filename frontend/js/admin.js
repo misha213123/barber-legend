@@ -8,6 +8,12 @@ async function admin() {
     return;
   }
 
+  if (adminSection === "users") {
+    await adminUsers();
+    return;
+  }
+
+
   if (!adminAccess) {
     await home();
     return;
@@ -45,6 +51,7 @@ function adminMainTabs() {
       <button class="${adminSection === "works" ? "tab active" : "tab"}" onclick="setAdminSection('works')">Работы</button>
       <button class="${adminSection === "schedule" ? "tab active" : "tab"}" onclick="setAdminSection('schedule')">График</button>
       <button class="${adminSection === "admins" ? "tab active" : "tab"}" onclick="setAdminSection('admins')">Админы</button>
+      <button class="${adminSection === "users" ? "tab active" : "tab"}" onclick="setAdminSection('users')">Клиенты</button>
     </div>
   `;
 }
@@ -849,5 +856,40 @@ async function removeAppAdmin(telegramId) {
     await adminAppAdmins();
   } catch {
     alert("Не удалось снять админку.");
+  }
+}
+
+
+async function adminUsers() {
+  try {
+    const users = await api(`/admin/users?telegram_id=${encodeURIComponent(user.id)}`);
+
+    app.innerHTML = `
+      <div class="screen">
+        <div class="header">
+          <div class="back" onclick="home()">←</div>
+          <h2>Клиенты</h2>
+        </div>
+
+        ${adminMainTabs()}
+
+        ${users.length ? users.map(u => `
+          <div class="card lift-card">
+            <div class="icon">👤</div>
+            <div>
+              <h3>${u.full_name || u.first_name || "Без имени"}</h3>
+              <p>Telegram: ${u.username ? `<a class="tg-link" href="https://t.me/${u.username}" target="_blank">@${u.username}</a>` : "нет username"}</p>
+              <p>Телефон: <a class="tg-link" href="tel:${u.phone}">${u.phone || "не указан"}</a></p>
+              <p>Email: <a class="tg-link" href="mailto:${u.email}">${u.email || "не указан"}</a></p>
+              <p class="muted">ID: ${u.telegram_id}</p>
+            </div>
+          </div>
+        `).join("") : `<p class="muted">Пользователей пока нет</p>`}
+
+        ${await nav("admin")}
+      </div>
+    `;
+  } catch {
+    alert("Не удалось загрузить пользователей.");
   }
 }

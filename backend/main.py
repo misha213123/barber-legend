@@ -118,6 +118,27 @@ def init_db():
         """
     )
 
+
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id TEXT NOT NULL UNIQUE,
+        username TEXT DEFAULT '',
+        username_norm TEXT DEFAULT '',
+        first_name TEXT DEFAULT '',
+        full_name TEXT DEFAULT '',
+        country_code TEXT DEFAULT '',
+        phone_without_code TEXT DEFAULT '',
+        phone TEXT DEFAULT '',
+        email TEXT DEFAULT '',
+        last_seen TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    for col in ["full_name", "country_code", "phone_without_code", "phone", "email"]:
+        if not column_exists(conn, "users", col):
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT ''")
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS services (
@@ -310,6 +331,16 @@ class BookingReschedule(BaseModel):
     time: str
 
 
+class UserProfileSave(BaseModel):
+    telegram_id: str
+    username: Optional[str] = ""
+    first_name: Optional[str] = ""
+    full_name: str
+    country_code: str
+    phone_without_code: str
+    phone: str
+    email: str
+
 class StatusUpdate(BaseModel):
     status: str
 
@@ -425,6 +456,19 @@ def app_admin_to_dict(row):
 
 def booking_to_dict(row):
     return dict(row)
+
+def user_to_dict(row):
+    return {
+        "telegram_id": row["telegram_id"],
+        "username": row["username"],
+        "first_name": row["first_name"],
+        "full_name": row["full_name"],
+        "country_code": row["country_code"],
+        "phone_without_code": row["phone_without_code"],
+        "phone": row["phone"],
+        "email": row["email"],
+        "last_seen": row["last_seen"],
+    }
 
 
 def service_to_dict(row):
@@ -558,6 +602,75 @@ def check_slot_available(conn, master: str, booking_date: str, booking_time: str
 def root():
     return {"status": "ok", "app": "Legend Barbershop", "admins": len(ADMIN_IDS)}
 
+
+@app.get("/me/profile")
+def get_my_profile(telegram_id: str):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM users WHERE telegram_id = ?",
+        (str(telegram_id),)
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    return user_to_dict(row)
+
+
+@app.post("/me/profile")
+def save_my_profile(data: UserProfileSave):
+    conn = get_conn()
+
+    username = str(data.username or "").strip().lstrip("@")
+    username_norm = normalize_username(username)
+
+    conn.execute("""
+        INSERT INTO users (
+            telegram_id, username, username_norm, first_name,
+            full_name, country_code, phone_without_code, phone, email, last_seen
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+            username = excluded.username,
+            username_norm = excluded.username_norm,
+            first_name = excluded.first_name,
+            full_name = excluded.full_name,
+            country_code = excluded.country_code,
+            phone_without_code = excluded.phone_without_code,
+            phone = excluded.phone,
+            email = excluded.email,
+            last_seen = CURRENT_TIMESTAMP
+    """, (
+        str(data.telegram_id),
+        username,
+        username_norm,
+        data.first_name or "",
+        data.full_name,
+        data.country_code,
+        data.phone_without_code,
+        data.phone,
+        data.email,
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return {"success": True}
+
+
+@app.get("/admin/users")
+def admin_get_users(telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT * FROM users
+        ORDER BY last_seen DESC
+    """).fetchall()
+    conn.close()
+
+    return [user_to_dict(row) for row in rows]
 
 @app.get("/me/admin")
 def check_admin(telegram_id: str, username: str = "", first_name: str = ""):

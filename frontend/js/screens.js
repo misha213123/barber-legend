@@ -67,6 +67,10 @@ function isSelectedMasterDayOff() {
 
 async function home() {
   haptic();
+    if (profileRequired) {
+    const ok = await ensureUserProfile();
+    if (!ok) return;
+  }
   await loadCatalog(false);
   await loadWorkPhotos(false);
 
@@ -270,14 +274,20 @@ async function timeScreen() {
       ${isReschedule ? `<p class="muted">Выбери новое время для записи: ${rescheduleBooking.service}</p>` : ""}
 
       <div class="days-scroll">
-        ${days.map(d => `
-          <div class="day ${selectedDay.date === d.date ? "active" : ""}"
-            onclick="selectDay('${d.label}', '${d.date}')">
-            <span>${d.label}</span>
-            ${d.day}
-            <small>${d.month}</small>
-          </div>
-        `).join("")}
+        ${days.map(d => {
+  const dayShopClosed = shopClosedDays.some(item => item.date === d.date);
+  const dayMasterOff = masterDayOffs.some(item => item.date === d.date);
+  const disabledDay = dayShopClosed || dayMasterOff;
+
+  return `
+    <div class="day ${selectedDay.date === d.date ? "active" : ""} ${disabledDay ? "day-off" : ""}"
+      onclick="${disabledDay ? "" : `selectDay('${d.label}', '${d.date}')`}">
+      <span>${d.label}</span>
+      ${d.day}
+      <small>${dayShopClosed ? "закрыто" : dayMasterOff ? "выходной" : d.month}</small>
+    </div>
+  `;
+}).join("")}
       </div>
 
       <div class="work-hours-note">
