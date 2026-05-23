@@ -1173,3 +1173,13 @@ def admin_delete_work_photo(photo_id: int, telegram_id: str = Query(...)):
     conn.commit()
     conn.close()
     return {"success": True}
+
+
+from features_reviews_stats import register_reviews_stats_features
+
+register_reviews_stats_features(
+    app=app,
+    get_conn=get_conn,
+    require_admin=require_admin,
+    ADMIN_IDS=ADMIN_IDS,
+)

@@ -13,6 +13,16 @@ async function admin() {
     return;
   }
 
+  if (adminSection === "stats") {
+    await adminStats();
+    return;
+  }
+
+  if (adminSection === "broadcast") {
+    await adminBroadcast();
+    return;
+  }
+
 
   if (!adminAccess) {
     await home();
@@ -52,6 +62,8 @@ function adminMainTabs() {
       <button class="${adminSection === "schedule" ? "tab active" : "tab"}" onclick="setAdminSection('schedule')">График</button>
       <button class="${adminSection === "admins" ? "tab active" : "tab"}" onclick="setAdminSection('admins')">Админы</button>
       <button class="${adminSection === "users" ? "tab active" : "tab"}" onclick="setAdminSection('users')">Клиенты</button>
+      <button class="${adminSection === "stats" ? "tab active" : "tab"}" onclick="setAdminSection('stats')">Стата</button>
+      <button class="${adminSection === "broadcast" ? "tab active" : "tab"}" onclick="setAdminSection('broadcast')">Рассылка</button>
     </div>
   `;
 }

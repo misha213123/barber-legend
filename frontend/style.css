@@ -1039,3 +1039,84 @@ button,
   color: #d7ad55;
   text-decoration: none;
 }
+
+.review-box {
+  margin-top: 18px;
+  background: #111113;
+  border: 1px solid rgba(215, 173, 85, .18);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.review-stars {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.review-stars button {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #292929;
+  border-radius: 14px;
+  background: #171719;
+  color: #555;
+  font-size: 26px;
+}
+
+.review-stars button.active,
+.star.active {
+  color: #d7ad55;
+}
+
+.star {
+  color: #555;
+  font-size: 16px;
+}
+
+.form-textarea {
+  width: 100%;
+  min-height: 110px;
+  border: 1px solid #292929;
+  border-radius: 14px;
+  background: #111113;
+  color: #fff;
+  padding: 14px;
+  font-size: 16px;
+  resize: vertical;
+  outline: none;
+}
+
+.form-textarea:focus {
+  border-color: rgba(215, 173, 85, .6);
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+
+.stat-row:last-child {
+  border-bottom: none;
+}
+
+.review-mini {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+
+.review-mini:last-child {
+  border-bottom: none;
+}
+
+.review-mini p {
+  margin: 6px 0;
+}
+
+.review-mini small {
+  color: #999;
+}

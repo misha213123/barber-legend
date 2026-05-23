@@ -25,6 +25,7 @@ let rescheduleBooking = null;
 let currentProfile = null;
 let profileRequired = true;
 let selectedCountryCode = "+48";
+let myReviews = [];
 
 const times = [
   "09:00", "10:00", "11:00", "12:00",

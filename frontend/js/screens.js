@@ -409,7 +409,7 @@ async function myBookings() {
 
   try {
     const bookings = await api(`/bookings/${user.id}`);
-
+    await loadMyReviews();
     app.innerHTML = `
       <div class="screen">
         <div class="header"><div class="back" onclick="home()">←</div><h2>Мои записи</h2></div>
@@ -429,6 +429,13 @@ async function myBookings() {
                   <button class="small-btn" onclick="startReschedule(${b.id})">Перезаписаться</button>
                   <button class="small-btn danger" onclick="cancelBooking(${b.id})">Отменить запись</button>
                 ` : ""}
+                ${b.status === "Выполнена" && !hasReviewForBooking(b.id) ? `
+  <button class="small-btn" onclick="openReviewScreen(${b.id})">Оставить отзыв</button>
+` : ""}
+
+${b.status === "Выполнена" && hasReviewForBooking(b.id) ? `
+  <p class="price">✓ Отзыв оставлен</p>
+` : ""}
               </div>
             </div>
           `;
