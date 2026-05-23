@@ -47,6 +47,77 @@ function setAdminMode(mode) {
   admin();
 }
 
+function fileToCompressedDataUrl(file, maxSize = 1100, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const img = new Image();
+
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height && width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        }
+
+        if (height >= width && height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function chooseImageFromDevice() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.display = "none";
+
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+
+      if (!file) {
+        resolve("");
+        return;
+      }
+
+      try {
+        const dataUrl = await fileToCompressedDataUrl(file);
+        resolve(dataUrl);
+      } catch {
+        alert("Не удалось обработать фото.");
+        resolve("");
+      } finally {
+        input.remove();
+      }
+    };
+
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
 async function adminBookings() {
   try {
     const allBookings = await api(`/admin/bookings?telegram_id=${encodeURIComponent(user.id)}`);
@@ -159,7 +230,7 @@ async function adminServices() {
             <p>${Number(s.is_active) === 1 ? "🟢 Активна" : "🔴 Скрыта"}</p>
 
             <button class="small-btn" onclick="editService(${s.id})">Редактировать</button>
-            <button class="small-btn" onclick="changeServicePhoto(${s.id})">Фото</button>
+            <button class="small-btn" onclick="changeServicePhoto(${s.id})">Заменить фото</button>
             <button class="small-btn" onclick="toggleService(${s.id}, ${Number(s.is_active) === 1 ? 0 : 1})">
               ${Number(s.is_active) === 1 ? "Скрыть" : "Показать"}
             </button>
@@ -256,7 +327,9 @@ async function createService() {
   const duration = Number(prompt("Длительность в минутах:", "45"));
   const price = Number(prompt("Цена в zł:", "120"));
   const icon = prompt("Иконка/эмодзи:", "✂️");
-  const image = prompt("Ссылка на фото:", "https://images.unsplash.com/photo-1621605815971-fbc98d665033?q=80&w=600&auto=format&fit=crop");
+
+  alert("Сейчас выбери фото услуги из галереи телефона или ПК.");
+  const image = await chooseImageFromDevice();
 
   try {
     await api(`/admin/services?telegram_id=${encodeURIComponent(user.id)}`, {
@@ -282,12 +355,11 @@ async function editService(id) {
   const duration = Number(prompt("Длительность:", s.duration));
   const price = Number(prompt("Цена:", s.price));
   const icon = prompt("Иконка:", s.icon || "✂️");
-  const image = prompt("Ссылка на фото:", s.img || s.image || "");
 
   try {
     await api(`/admin/services/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
       method: "PATCH",
-      body: JSON.stringify({ name, description, duration, price, icon, image })
+      body: JSON.stringify({ name, description, duration, price, icon })
     });
 
     services = [];
@@ -298,10 +370,9 @@ async function editService(id) {
 }
 
 async function changeServicePhoto(id) {
-  const s = services.find(item => Number(item.id) === Number(id));
-  if (!s) return;
+  alert("Выбери новое фото услуги из галереи телефона или ПК.");
+  const image = await chooseImageFromDevice();
 
-  const image = prompt("Новая ссылка на фото услуги:", s.img || s.image || "");
   if (!image) return;
 
   try {
@@ -353,7 +424,9 @@ async function createMaster() {
   const role = prompt("Роль/специализация:", "Барбер");
   const rating = prompt("Рейтинг:", "5.0");
   const reviews = Number(prompt("Количество отзывов:", "0"));
-  const image = prompt("Ссылка на фото:", "https://images.unsplash.com/photo-1618077360395-f3068be8e001?q=80&w=300&auto=format&fit=crop");
+
+  alert("Сейчас выбери фото мастера из галереи телефона или ПК.");
+  const image = await chooseImageFromDevice();
 
   try {
     await api(`/admin/masters?telegram_id=${encodeURIComponent(user.id)}`, {
@@ -378,12 +451,11 @@ async function editMaster(id) {
   const role = prompt("Роль/специализация:", m.role || "");
   const rating = prompt("Рейтинг:", m.rating || "5.0");
   const reviews = Number(prompt("Количество отзывов:", m.reviews || 0));
-  const image = prompt("Ссылка на фото:", m.img || m.image || "");
 
   try {
     await api(`/admin/masters/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
       method: "PATCH",
-      body: JSON.stringify({ name, role, rating, reviews, image })
+      body: JSON.stringify({ name, role, rating, reviews })
     });
 
     masters = [];
@@ -394,10 +466,9 @@ async function editMaster(id) {
 }
 
 async function changeMasterPhoto(id) {
-  const m = masters.find(item => Number(item.id) === Number(id));
-  if (!m) return;
+  alert("Выбери новое фото мастера из галереи телефона или ПК.");
+  const image = await chooseImageFromDevice();
 
-  const image = prompt("Новая ссылка на фото мастера:", m.img || m.image || "");
   if (!image) return;
 
   try {
@@ -481,11 +552,13 @@ async function deleteMaster(id) {
 }
 
 async function createWorkPhoto() {
-  const image = prompt("Ссылка на фото работы:");
+  alert("Выбери фото работы из галереи телефона или ПК.");
+  const image = await chooseImageFromDevice();
+
   if (!image) return;
 
   const title = prompt("Название/описание работы:", "Работа мастера");
-  const master = prompt("Имя мастера (можно оставить пустым):", "");
+  const master = prompt("Имя мастера:", "");
 
   try {
     await api(`/admin/work-photos?telegram_id=${encodeURIComponent(user.id)}`, {
@@ -504,22 +577,38 @@ async function editWorkPhoto(id) {
   const p = workPhotos.find(item => Number(item.id) === Number(id));
   if (!p) return;
 
-  const image = prompt("Ссылка на фото работы:", p.img || p.image || "");
-  if (!image) return;
-
   const title = prompt("Название/описание:", p.title || "");
   const master = prompt("Имя мастера:", p.master || "");
 
   try {
     await api(`/admin/work-photos/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
       method: "PATCH",
-      body: JSON.stringify({ image, title, master })
+      body: JSON.stringify({ title, master })
     });
 
     workPhotos = [];
     await adminWorks();
   } catch {
     alert("Не удалось изменить фото работы.");
+  }
+}
+
+async function changeWorkPhotoImage(id) {
+  alert("Выбери новое фото работы из галереи телефона или ПК.");
+  const image = await chooseImageFromDevice();
+
+  if (!image) return;
+
+  try {
+    await api(`/admin/work-photos/${id}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ image })
+    });
+
+    workPhotos = [];
+    await adminWorks();
+  } catch {
+    alert("Не удалось заменить фото работы.");
   }
 }
 
