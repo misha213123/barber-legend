@@ -34,3 +34,6 @@ const times = [
 ];
 
 
+let clientSummary = null;
+let favoriteMaster = null;
+let menuOpened = false;

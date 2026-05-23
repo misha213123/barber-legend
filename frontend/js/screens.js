@@ -80,7 +80,7 @@ async function home() {
   app.innerHTML = `
     <div class="screen home-screen">
       <div class="top">
-        <div>☰</div>
+        <div onclick="openClientMenu()">☰</div>
         <div class="logo">LEGEND<span>BARBERSHOP</span></div>
         <div>♛</div>
       </div>

@@ -1183,3 +1183,12 @@ register_reviews_stats_features(
     require_admin=require_admin,
     ADMIN_IDS=ADMIN_IDS,
 )
+
+
+from backend.features_client import register_client_features
+
+register_client_features(
+    app=app,
+    get_conn=get_conn,
+    require_admin=require_admin,
+)
