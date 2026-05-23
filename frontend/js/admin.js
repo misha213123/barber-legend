@@ -3,6 +3,11 @@ async function admin() {
 
   const adminAccess = await isAdminUser();
 
+  if (adminSection === "admins") {
+    await adminAppAdmins();
+    return;
+  }
+
   if (!adminAccess) {
     await home();
     return;
@@ -33,12 +38,13 @@ async function admin() {
 
 function adminMainTabs() {
   return `
-    <div class="admin-tabs five-tabs">
+    <div class="admin-tabs six-tabs">
       <button class="${adminSection === "bookings" ? "tab active" : "tab"}" onclick="setAdminSection('bookings')">Записи</button>
       <button class="${adminSection === "services" ? "tab active" : "tab"}" onclick="setAdminSection('services')">Услуги</button>
       <button class="${adminSection === "masters" ? "tab active" : "tab"}" onclick="setAdminSection('masters')">Мастера</button>
       <button class="${adminSection === "works" ? "tab active" : "tab"}" onclick="setAdminSection('works')">Работы</button>
       <button class="${adminSection === "schedule" ? "tab active" : "tab"}" onclick="setAdminSection('schedule')">График</button>
+      <button class="${adminSection === "admins" ? "tab active" : "tab"}" onclick="setAdminSection('admins')">Админы</button>
     </div>
   `;
 }
@@ -760,5 +766,88 @@ async function deleteWorkPhoto(id) {
     await adminWorks();
   } catch {
     alert("Не удалось удалить фото работы.");
+  }
+}
+
+
+async function adminAppAdmins() {
+  try {
+    const admins = await api(`/admin/app-admins?telegram_id=${encodeURIComponent(user.id)}`);
+
+    app.innerHTML = `
+      <div class="screen">
+        <div class="header">
+          <div class="back" onclick="home()">←</div>
+          <h2>Админы</h2>
+        </div>
+
+        ${adminMainTabs()}
+
+        <div class="details">
+          <h3>Выдать админку</h3>
+          <p class="muted">
+            Пользователь должен сначала открыть Mini App хотя бы один раз.
+            Потом сюда можно добавить его по @username.
+          </p>
+          <button class="gold-btn" onclick="addAppAdminByUsername()">+ Добавить админа по @username</button>
+        </div>
+
+        ${admins.length ? admins.map(a => `
+          <div class="card lift-card">
+            <div class="icon">♛</div>
+            <div>
+              <h3>${a.username ? "@" + a.username : a.first_name || "Админ"}</h3>
+              <p>ID: ${a.telegram_id}</p>
+              <p>${a.is_super_admin ? "Главный админ из Render ADMIN_IDS" : "Админ из панели"}</p>
+
+              ${a.is_super_admin ? `
+                <p class="price">Нельзя удалить из Mini App</p>
+              ` : `
+                <button class="small-btn danger" onclick="removeAppAdmin('${a.telegram_id}')">Снять админку</button>
+              `}
+            </div>
+          </div>
+        `).join("") : `<p class="muted">Админов пока нет</p>`}
+
+        ${await nav("admin")}
+      </div>
+    `;
+  } catch {
+    alert("Не удалось загрузить список админов.");
+  }
+}
+
+async function addAppAdminByUsername() {
+  const username = prompt("Введи Telegram username без @ или с @:");
+
+  if (!username) return;
+
+  try {
+    await api(`/admin/app-admins/by-username?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "POST",
+      body: JSON.stringify({ username })
+    });
+
+    alert("Админка выдана.");
+    adminCache = null;
+    await adminAppAdmins();
+  } catch {
+    alert("Не удалось выдать админку. Пользователь должен сначала открыть Mini App хотя бы один раз.");
+  }
+}
+
+async function removeAppAdmin(telegramId) {
+  if (!confirm("Снять админку у этого пользователя?")) return;
+
+  try {
+    await api(`/admin/app-admins/${encodeURIComponent(telegramId)}?telegram_id=${encodeURIComponent(user.id)}`, {
+      method: "DELETE"
+    });
+
+    alert("Админка снята.");
+    adminCache = null;
+    await adminAppAdmins();
+  } catch {
+    alert("Не удалось снять админку.");
   }
 }

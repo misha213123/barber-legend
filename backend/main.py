@@ -34,8 +34,23 @@ def get_conn():
 
 
 def is_admin(telegram_id: str) -> bool:
-    return str(telegram_id) in ADMIN_IDS
+    telegram_id = str(telegram_id)
 
+    if telegram_id in ADMIN_IDS:
+        return True
+
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM app_admins WHERE telegram_id = ? AND is_active = 1",
+        (telegram_id,),
+    ).fetchone()
+    conn.close()
+
+    return row is not None
+
+
+def normalize_username(username: str) -> str:
+    return str(username or "").strip().lstrip("@").lower()
 
 def require_admin(telegram_id: str):
     if not is_admin(telegram_id):
@@ -181,6 +196,42 @@ def init_db():
         )
         """
     )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id TEXT NOT NULL UNIQUE,
+            username TEXT DEFAULT '',
+            username_norm TEXT DEFAULT '',
+            first_name TEXT DEFAULT '',
+            last_seen TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id TEXT NOT NULL UNIQUE,
+            username TEXT DEFAULT '',
+            username_norm TEXT DEFAULT '',
+            first_name TEXT DEFAULT '',
+            granted_by TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    if not column_exists(conn, "users", "username_norm"):
+        conn.execute("ALTER TABLE users ADD COLUMN username_norm TEXT DEFAULT ''")
+
+    if not column_exists(conn, "app_admins", "username_norm"):
+        conn.execute("ALTER TABLE app_admins ADD COLUMN username_norm TEXT DEFAULT ''")
+
+
 
     if not column_exists(conn, "work_photos", "master"):
         conn.execute("ALTER TABLE work_photos ADD COLUMN master TEXT DEFAULT ''")
@@ -338,6 +389,40 @@ class MasterDayOffUpdate(BaseModel):
     is_off: int = 1
 
 
+class AppAdminByUsername(BaseModel):
+    username: str
+
+def upsert_user(conn, telegram_id: str, username: str = "", first_name: str = ""):
+    telegram_id = str(telegram_id)
+    username = str(username or "").strip().lstrip("@")
+    username_norm = normalize_username(username)
+    first_name = str(first_name or "").strip()
+
+    conn.execute(
+        """
+        INSERT INTO users (telegram_id, username, username_norm, first_name, last_seen)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+            username = excluded.username,
+            username_norm = excluded.username_norm,
+            first_name = excluded.first_name,
+            last_seen = CURRENT_TIMESTAMP
+        """,
+        (telegram_id, username, username_norm, first_name),
+    )
+
+
+def app_admin_to_dict(row):
+    return {
+        "telegram_id": row["telegram_id"],
+        "username": row["username"],
+        "first_name": row["first_name"],
+        "granted_by": row["granted_by"],
+        "is_active": row["is_active"],
+        "created_at": row["created_at"],
+        "is_super_admin": str(row["telegram_id"]) in ADMIN_IDS,
+    }
+
 def booking_to_dict(row):
     return dict(row)
 
@@ -475,8 +560,123 @@ def root():
 
 
 @app.get("/me/admin")
-def check_admin(telegram_id: str):
+def check_admin(telegram_id: str, username: str = "", first_name: str = ""):
+    conn = get_conn()
+    upsert_user(conn, telegram_id, username, first_name)
+    conn.commit()
+    conn.close()
+
     return {"is_admin": is_admin(telegram_id), "telegram_id": telegram_id}
+
+
+@app.get("/admin/app-admins")
+def admin_get_app_admins(telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM app_admins WHERE is_active = 1 ORDER BY id DESC"
+    ).fetchall()
+    conn.close()
+
+    env_admins = [
+        {
+            "telegram_id": admin_id,
+            "username": "",
+            "first_name": "Главный админ из Render ADMIN_IDS",
+            "granted_by": "ENV",
+            "is_active": 1,
+            "created_at": "",
+            "is_super_admin": True,
+        }
+        for admin_id in ADMIN_IDS
+    ]
+
+    return env_admins + [
+        app_admin_to_dict(row)
+        for row in rows
+        if str(row["telegram_id"]) not in ADMIN_IDS
+    ]
+
+
+@app.post("/admin/app-admins/by-username")
+def admin_add_app_admin_by_username(data: AppAdminByUsername, telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+
+    username_norm = normalize_username(data.username)
+
+    if not username_norm:
+        raise HTTPException(status_code=400, detail="Укажи username")
+
+    conn = get_conn()
+
+    user_row = conn.execute(
+        "SELECT * FROM users WHERE username_norm = ? ORDER BY last_seen DESC LIMIT 1",
+        (username_norm,),
+    ).fetchone()
+
+    if not user_row:
+        conn.close()
+        raise HTTPException(
+            status_code=404,
+            detail="Пользователь с таким @username ещё не открывал Mini App. Пусть зайдёт в приложение один раз.",
+        )
+
+    conn.execute(
+        """
+        INSERT INTO app_admins (telegram_id, username, username_norm, first_name, granted_by, is_active)
+        VALUES (?, ?, ?, ?, ?, 1)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+            username = excluded.username,
+            username_norm = excluded.username_norm,
+            first_name = excluded.first_name,
+            granted_by = excluded.granted_by,
+            is_active = 1
+        """,
+        (
+            user_row["telegram_id"],
+            user_row["username"],
+            user_row["username_norm"],
+            user_row["first_name"],
+            str(telegram_id),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "telegram_id": user_row["telegram_id"],
+        "username": user_row["username"],
+    }
+
+
+@app.delete("/admin/app-admins/{target_telegram_id}")
+def admin_remove_app_admin(target_telegram_id: str, telegram_id: str = Query(...)):
+    require_admin(telegram_id)
+
+    if str(target_telegram_id) in ADMIN_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail="Главного админа из Render ADMIN_IDS нельзя удалить из приложения",
+        )
+
+    if str(target_telegram_id) == str(telegram_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя снять админку самому себе",
+        )
+
+    conn = get_conn()
+    conn.execute(
+        "UPDATE app_admins SET is_active = 0 WHERE telegram_id = ?",
+        (str(target_telegram_id),),
+    )
+    conn.commit()
+    conn.close()
+
+    return {"success": True}
 
 
 @app.get("/services")

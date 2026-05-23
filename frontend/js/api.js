@@ -18,7 +18,14 @@ async function isAdminUser() {
   if (adminCache !== null) return adminCache;
 
   try {
-    const data = await api(`/me/admin?telegram_id=${encodeURIComponent(user.id)}`);
+    const params = new URLSearchParams({
+      telegram_id: String(user.id),
+      username: user.username || "",
+      first_name: user.first_name || ""
+    });
+
+    const data = await api(`/me/admin?${params.toString()}`);
+
     adminCache = data.is_admin === true;
     return adminCache;
   } catch (e) {

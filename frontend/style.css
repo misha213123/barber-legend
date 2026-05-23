@@ -902,3 +902,12 @@ button,
   margin-top: 2px;
   opacity: .75;
 }
+
+.admin-tabs.six-tabs {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.admin-tabs.six-tabs .tab {
+  min-height: 44px;
+  font-size: 11px;
+}
